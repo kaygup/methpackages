@@ -9,7 +9,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # Define package directory
-PACKAGE_DIR="/usr/local/share/flask-iso-utility"
+PACKAGE_DIR="/usr/local/share/meth-packages/flask"
 
 # Install required packages
 install_dependencies() {
