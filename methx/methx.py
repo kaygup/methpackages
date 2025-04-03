@@ -1,516 +1,508 @@
 #!/usr/bin/env python3
+"""
+Methx - A Simple File Explorer made with wxPython
+"""
+
 import os
+import sys
 import wx
+import wx.lib.agw.customtreectrl as ctc
 import shutil
 import subprocess
-import platform
-from datetime import datetime
 
-class FileExplorerPanel(wx.Panel):
-    def __init__(self, parent):
-        super(FileExplorerPanel, self).__init__(parent)
+class MethxFrame(wx.Frame):
+    def __init__(self, parent=None):
+        wx.Frame.__init__(self, parent, title="Methx File Explorer", size=(900, 600))
         
-        self.current_path = os.path.expanduser("~")
+        # Create splitter window
+        self.splitter = wx.SplitterWindow(self, style=wx.SP_LIVE_UPDATE)
         
-        # Create sizers
-        main_sizer = wx.BoxSizer(wx.VERTICAL)
-        nav_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        # Create panels
+        self.tree_panel = wx.Panel(self.splitter)
+        self.file_panel = wx.Panel(self.splitter)
         
-        # Navigation controls
-        self.path_text = wx.TextCtrl(self)
-        self.path_text.SetValue(self.current_path)
-        self.path_text.Bind(wx.EVT_TEXT_ENTER, self.on_path_changed)
+        # Tree Panel
+        self.tree = ctc.CustomTreeCtrl(self.tree_panel, agwStyle=wx.TR_DEFAULT_STYLE|wx.TR_HIDE_ROOT|wx.TR_FULL_ROW_HIGHLIGHT)
+        self.root = self.tree.AddRoot("Root")
         
-        back_btn = wx.Button(self, label="Back")
-        back_btn.Bind(wx.EVT_BUTTON, self.on_back)
+        # Get home directory
+        self.home_dir = os.path.expanduser("~")
+        self.current_dir = self.home_dir
         
-        up_btn = wx.Button(self, label="Up")
-        up_btn.Bind(wx.EVT_BUTTON, self.on_up)
+        # Create tree layout
+        tree_sizer = wx.BoxSizer(wx.VERTICAL)
+        path_label = wx.StaticText(self.tree_panel, label="Directory Tree:")
+        tree_sizer.Add(path_label, 0, wx.ALL, 5)
+        tree_sizer.Add(self.tree, 1, wx.EXPAND|wx.ALL, 5)
+        self.tree_panel.SetSizer(tree_sizer)
         
-        refresh_btn = wx.Button(self, label="Refresh")
-        refresh_btn.Bind(wx.EVT_BUTTON, self.on_refresh)
-        
-        # Add controls to navigation sizer
-        nav_sizer.Add(back_btn, 0, wx.RIGHT, 5)
-        nav_sizer.Add(up_btn, 0, wx.RIGHT, 5)
-        nav_sizer.Add(refresh_btn, 0, wx.RIGHT, 5)
-        nav_sizer.Add(self.path_text, 1, wx.EXPAND)
-        
-        # Create file list
-        self.file_list = wx.ListCtrl(self, style=wx.LC_REPORT)
-        self.file_list.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.on_item_activated)
-        self.file_list.Bind(wx.EVT_LIST_ITEM_RIGHT_CLICK, self.on_right_click)
-        
-        # Add columns to file list
+        # File Panel
+        self.file_list = wx.ListCtrl(self.file_panel, style=wx.LC_REPORT)
         self.file_list.InsertColumn(0, "Name")
         self.file_list.InsertColumn(1, "Size")
         self.file_list.InsertColumn(2, "Type")
         self.file_list.InsertColumn(3, "Modified")
         
-        # Add search box
-        search_sizer = wx.BoxSizer(wx.HORIZONTAL)
-        search_label = wx.StaticText(self, label="Search:")
-        self.search_text = wx.TextCtrl(self, style=wx.TE_PROCESS_ENTER)
-        self.search_text.Bind(wx.EVT_TEXT_ENTER, self.on_search)
-        search_btn = wx.Button(self, label="Search")
-        search_btn.Bind(wx.EVT_BUTTON, self.on_search)
+        # Path display
+        self.path_text = wx.TextCtrl(self.file_panel)
+        self.path_text.SetValue(self.current_dir)
         
-        search_sizer.Add(search_label, 0, wx.ALIGN_CENTER_VERTICAL | wx.RIGHT, 5)
-        search_sizer.Add(self.search_text, 1, wx.EXPAND | wx.RIGHT, 5)
-        search_sizer.Add(search_btn, 0)
+        # Buttons
+        button_panel = wx.Panel(self.file_panel)
+        button_sizer = wx.BoxSizer(wx.HORIZONTAL)
         
-        # Status bar for information
-        self.status_bar = wx.StaticText(self)
+        self.back_btn = wx.Button(button_panel, label="← Back")
+        self.home_btn = wx.Button(button_panel, label="Home")
+        self.refresh_btn = wx.Button(button_panel, label="Refresh")
+        self.go_btn = wx.Button(button_panel, label="Go")
         
-        # Add everything to main sizer
-        main_sizer.Add(nav_sizer, 0, wx.EXPAND | wx.ALL, 5)
-        main_sizer.Add(self.file_list, 1, wx.EXPAND | wx.ALL, 5)
-        main_sizer.Add(search_sizer, 0, wx.EXPAND | wx.ALL, 5)
-        main_sizer.Add(self.status_bar, 0, wx.EXPAND | wx.ALL, 5)
+        button_sizer.Add(self.back_btn, 0, wx.RIGHT, 5)
+        button_sizer.Add(self.home_btn, 0, wx.RIGHT, 5)
+        button_sizer.Add(self.refresh_btn, 0, wx.RIGHT, 5)
+        button_sizer.Add(self.go_btn, 0, wx.RIGHT, 5)
         
-        self.SetSizer(main_sizer)
+        button_panel.SetSizer(button_sizer)
         
-        # Fill file list with initial directory
-        self.populate_file_list()
+        # File panel layout
+        file_sizer = wx.BoxSizer(wx.VERTICAL)
+        path_sizer = wx.BoxSizer(wx.HORIZONTAL)
+        path_sizer.Add(wx.StaticText(self.file_panel, label="Path: "), 0, wx.CENTER|wx.ALL, 5)
+        path_sizer.Add(self.path_text, 1, wx.EXPAND|wx.ALL, 5)
         
-        # Set column widths
-        self.file_list.SetColumnWidth(0, 250)
-        self.file_list.SetColumnWidth(1, 100)
-        self.file_list.SetColumnWidth(2, 100)
-        self.file_list.SetColumnWidth(3, 150)
-    
-    def populate_file_list(self):
-        self.file_list.DeleteAllItems()
-        self.path_text.SetValue(self.current_path)
+        file_sizer.Add(path_sizer, 0, wx.EXPAND|wx.ALL, 5)
+        file_sizer.Add(button_panel, 0, wx.ALL, 5)
+        file_sizer.Add(self.file_list, 1, wx.EXPAND|wx.ALL, 5)
+        self.file_panel.SetSizer(file_sizer)
         
-        try:
-            # Get list of files and directories
-            items = os.listdir(self.current_path)
+        # Setup splitter
+        self.splitter.SplitVertically(self.tree_panel, self.file_panel)
+        self.splitter.SetMinimumPaneSize(200)
+        self.splitter.SetSashPosition(250)
+        
+        # Status bar
+        self.statusbar = self.CreateStatusBar()
+        self.statusbar.SetStatusText("Ready")
+        
+        # Menu bar
+        menubar = wx.MenuBar()
+        
+        # File menu
+        file_menu = wx.Menu()
+        new_folder_item = file_menu.Append(wx.ID_ANY, "New Folder\tCtrl+N", "Create a new folder")
+        file_menu.AppendSeparator()
+        quit_item = file_menu.Append(wx.ID_EXIT, "Quit\tCtrl+Q", "Exit application")
+        
+        # Edit menu
+        edit_menu = wx.Menu()
+        copy_item = edit_menu.Append(wx.ID_COPY, "Copy\tCtrl+C", "Copy selected files")
+        cut_item = edit_menu.Append(wx.ID_CUT, "Cut\tCtrl+X", "Cut selected files")
+        paste_item = edit_menu.Append(wx.ID_PASTE, "Paste\tCtrl+V", "Paste files")
+        edit_menu.AppendSeparator()
+        delete_item = edit_menu.Append(wx.ID_DELETE, "Delete\tDel", "Delete selected files")
+        
+        # Help menu
+        help_menu = wx.Menu()
+        about_item = help_menu.Append(wx.ID_ABOUT, "About", "About Methx File Explorer")
+        
+        menubar.Append(file_menu, "File")
+        menubar.Append(edit_menu, "Edit")
+        menubar.Append(help_menu, "Help")
+        self.SetMenuBar(menubar)
+        
+        # Bind events
+        self.Bind(wx.EVT_MENU, self.OnQuit, quit_item)
+        self.Bind(wx.EVT_MENU, self.OnAbout, about_item)
+        self.Bind(wx.EVT_MENU, self.OnNewFolder, new_folder_item)
+        self.Bind(wx.EVT_MENU, self.OnCopy, copy_item)
+        self.Bind(wx.EVT_MENU, self.OnCut, cut_item)
+        self.Bind(wx.EVT_MENU, self.OnPaste, paste_item)
+        self.Bind(wx.EVT_MENU, self.OnDelete, delete_item)
+        
+        self.tree.Bind(ctc.EVT_TREE_ITEM_ACTIVATED, self.OnTreeActivated)
+        self.file_list.Bind(wx.EVT_LIST_ITEM_ACTIVATED, self.OnFileActivated)
+        self.back_btn.Bind(wx.EVT_BUTTON, self.OnBackButton)
+        self.home_btn.Bind(wx.EVT_BUTTON, self.OnHomeButton)
+        self.refresh_btn.Bind(wx.EVT_BUTTON, self.OnRefreshButton)
+        self.go_btn.Bind(wx.EVT_BUTTON, self.OnGoButton)
+        self.path_text.Bind(wx.EVT_TEXT_ENTER, self.OnGoButton)
+        
+        # Fill tree with drives/root
+        self.populate_tree()
+        
+        # Fill initial file list
+        self.populate_file_list(self.current_dir)
+        
+        # Clipboard data
+        self.clipboard = []
+        self.clipboard_action = ""  # "copy" or "cut"
+        
+        # Center window
+        self.Center()
+        
+    def populate_tree(self):
+        """Populate the directory tree with initial items"""
+        self.tree.DeleteAllItems()
+        self.root = self.tree.AddRoot("Root")
+        
+        if sys.platform == "win32":
+            # On Windows, add drives
+            for drive in range(65, 91):  # A-Z
+                drive_letter = chr(drive) + ":\\"
+                if os.path.exists(drive_letter):
+                    drive_item = self.tree.AppendItem(self.root, drive_letter)
+                    self.add_subdirectories(drive_item, drive_letter)
+        else:
+            # On Unix-like systems, start with root
+            root_item = self.tree.AppendItem(self.root, "/")
+            self.add_subdirectories(root_item, "/")
             
-            # Add directories first
-            directories = [item for item in items if os.path.isdir(os.path.join(self.current_path, item))]
+            # Add home directory
+            home_item = self.tree.AppendItem(self.root, self.home_dir)
+            self.add_subdirectories(home_item, self.home_dir)
+    
+    def add_subdirectories(self, parent_item, path):
+        """Add subdirectories to the tree item"""
+        try:
+            directories = [d for d in os.listdir(path) if os.path.isdir(os.path.join(path, d)) and not d.startswith('.')]
             directories.sort()
             
-            files = [item for item in items if os.path.isfile(os.path.join(self.current_path, item))]
-            files.sort()
-            
-            # Add special ".." directory for going up
-            index = self.file_list.InsertItem(0, "..")
-            self.file_list.SetItem(index, 1, "")
-            self.file_list.SetItem(index, 2, "Directory")
-            self.file_list.SetItem(index, 3, "")
-            
-            # Add directories
-            for i, item in enumerate(directories):
-                path = os.path.join(self.current_path, item)
-                index = self.file_list.InsertItem(i + 1, item)
-                
-                # Set file size
-                self.file_list.SetItem(index, 1, "")
-                
-                # Set file type
-                self.file_list.SetItem(index, 2, "Directory")
-                
-                # Set modification time
+            for directory in directories[:10]:  # Limit to first 10 to avoid tree explosion
+                dir_path = os.path.join(path, directory)
                 try:
-                    mod_time = os.path.getmtime(path)
-                    date_str = datetime.fromtimestamp(mod_time).strftime("%Y-%m-%d %H:%M:%S")
-                    self.file_list.SetItem(index, 3, date_str)
+                    dir_item = self.tree.AppendItem(parent_item, directory)
+                    # Check if this directory has subdirectories
+                    has_subdirs = False
+                    try:
+                        subdirs = [d for d in os.listdir(dir_path) 
+                                 if os.path.isdir(os.path.join(dir_path, d)) and not d.startswith('.')]
+                        if subdirs:
+                            has_subdirs = True
+                    except:
+                        pass
+                        
+                    if has_subdirs:
+                        # Add a dummy item that will be replaced when expanded
+                        self.tree.AppendItem(dir_item, "Loading...")
                 except:
-                    self.file_list.SetItem(index, 3, "")
-            
-            # Add files
-            for i, item in enumerate(files):
-                path = os.path.join(self.current_path, item)
-                index = self.file_list.InsertItem(i + 1 + len(directories), item)
-                
-                # Set file size
-                try:
-                    size = os.path.getsize(path)
-                    size_str = self.format_size(size)
-                    self.file_list.SetItem(index, 1, size_str)
-                except:
-                    self.file_list.SetItem(index, 1, "")
-                
-                # Set file type
-                ext = os.path.splitext(item)[1].lower()
-                if ext:
-                    self.file_list.SetItem(index, 2, ext[1:].upper() + " File")
-                else:
-                    self.file_list.SetItem(index, 2, "File")
-                
-                # Set modification time
-                try:
-                    mod_time = os.path.getmtime(path)
-                    date_str = datetime.fromtimestamp(mod_time).strftime("%Y-%m-%d %H:%M:%S")
-                    self.file_list.SetItem(index, 3, date_str)
-                except:
-                    self.file_list.SetItem(index, 3, "")
-            
-            # Update status bar
-            self.update_status_bar(directories, files)
-            
-        except Exception as e:
-            self.status_bar.SetLabel(f"Error: {str(e)}")
-    
-    def format_size(self, size_bytes):
-        if size_bytes < 1024:
-            return f"{size_bytes} B"
-        elif size_bytes < 1024 * 1024:
-            return f"{size_bytes / 1024:.1f} KB"
-        elif size_bytes < 1024 * 1024 * 1024:
-            return f"{size_bytes / (1024 * 1024):.1f} MB"
-        else:
-            return f"{size_bytes / (1024 * 1024 * 1024):.1f} GB"
-    
-    def update_status_bar(self, directories, files):
-        total_size = 0
-        try:
-            for file in files:
-                path = os.path.join(self.current_path, file)
-                total_size += os.path.getsize(path)
+                    pass
         except:
             pass
-        
-        self.status_bar.SetLabel(f"{len(directories)} directories, {len(files)} files, Total size: {self.format_size(total_size)}")
     
-    def on_path_changed(self, event):
-        new_path = self.path_text.GetValue()
-        if os.path.exists(new_path) and os.path.isdir(new_path):
-            self.current_path = new_path
-            self.populate_file_list()
-        else:
-            self.path_text.SetValue(self.current_path)
-            self.status_bar.SetLabel(f"Invalid path: {new_path}")
-    
-    def on_back(self, event):
-        # TODO: Implement back functionality with history
-        pass
-    
-    def on_up(self, event):
-        parent_dir = os.path.dirname(self.current_path)
-        if parent_dir and parent_dir != self.current_path:
-            self.current_path = parent_dir
-            self.populate_file_list()
-    
-    def on_refresh(self, event):
-        self.populate_file_list()
-    
-    def on_item_activated(self, event):
-        index = event.GetIndex()
-        item_text = self.file_list.GetItemText(index)
+    def populate_file_list(self, path):
+        """Fill the file list with contents of the path"""
+        self.file_list.DeleteAllItems()
+        self.current_dir = path
+        self.path_text.SetValue(path)
         
-        if item_text == "..":
-            # Go up a directory
-            self.on_up(None)
-        else:
-            path = os.path.join(self.current_path, item_text)
-            if os.path.isdir(path):
-                self.current_path = path
-                self.populate_file_list()
-            else:
-                self.open_file(path)
-    
-    def on_right_click(self, event):
-        index = event.GetIndex()
-        item_text = self.file_list.GetItemText(index)
-        
-        if item_text == "..":
-            return
-        
-        path = os.path.join(self.current_path, item_text)
-        
-        # Create context menu
-        menu = wx.Menu()
-        
-        # Add menu items
-        open_item = menu.Append(wx.ID_ANY, "Open")
-        self.Bind(wx.EVT_MENU, lambda e: self.open_file(path), open_item)
-        
-        if os.path.isfile(path):
-            edit_item = menu.Append(wx.ID_ANY, "Edit")
-            self.Bind(wx.EVT_MENU, lambda e: self.edit_file(path), edit_item)
-        
-        menu.AppendSeparator()
-        
-        copy_item = menu.Append(wx.ID_ANY, "Copy")
-        self.Bind(wx.EVT_MENU, lambda e: self.copy_to_clipboard(path), copy_item)
-        
-        delete_item = menu.Append(wx.ID_ANY, "Delete")
-        self.Bind(wx.EVT_MENU, lambda e: self.delete_item(path), delete_item)
-        
-        menu.AppendSeparator()
-        
-        properties_item = menu.Append(wx.ID_ANY, "Properties")
-        self.Bind(wx.EVT_MENU, lambda e: self.show_properties(path), properties_item)
-        
-        # Show context menu
-        self.PopupMenu(menu)
-        menu.Destroy()
-    
-    def open_file(self, path):
         try:
-            if platform.system() == "Windows":
-                os.startfile(path)
-            elif platform.system() == "Darwin":  # macOS
-                subprocess.run(["open", path])
-            else:  # Linux
-                subprocess.run(["xdg-open", path])
-            self.status_bar.SetLabel(f"Opened: {path}")
-        except Exception as e:
-            self.status_bar.SetLabel(f"Error opening file: {str(e)}")
-    
-    def edit_file(self, path):
-        try:
-            # Try to determine suitable editor
-            editor = None
-            if platform.system() == "Windows":
-                editor = "notepad.exe"
-            elif platform.system() == "Darwin":  # macOS
-                editor = "open -t"
-            else:  # Linux
-                for ed in ["nano", "vim", "gedit", "kwrite"]:
-                    if shutil.which(ed):
-                        editor = ed
-                        break
+            items = os.listdir(path)
+            items.sort(key=lambda x: (not os.path.isdir(os.path.join(path, x)), x.lower()))
             
-            if editor:
-                if " " in editor:  # handle "open -t" case
-                    cmd = editor.split() + [path]
-                    subprocess.Popen(cmd)
-                else:
-                    subprocess.Popen([editor, path])
-                self.status_bar.SetLabel(f"Editing: {path}")
-            else:
-                self.status_bar.SetLabel("No suitable editor found")
+            index = 0
+            for item in items:
+                item_path = os.path.join(path, item)
+                try:
+                    # Get item stats
+                    stats = os.stat(item_path)
+                    
+                    # File size (formatted)
+                    if os.path.isdir(item_path):
+                        size_str = "<DIR>"
+                        item_type = "Folder"
+                    else:
+                        size = stats.st_size
+                        if size < 1024:
+                            size_str = f"{size} B"
+                        elif size < 1024 * 1024:
+                            size_str = f"{size / 1024:.1f} KB"
+                        else:
+                            size_str = f"{size / (1024 * 1024):.1f} MB"
+                        
+                        # Get file extension
+                        _, ext = os.path.splitext(item)
+                        item_type = ext[1:].upper() + " File" if ext else "File"
+                    
+                    # Format date
+                    import datetime
+                    mod_time = datetime.datetime.fromtimestamp(stats.st_mtime)
+                    date_str = mod_time.strftime("%Y-%m-%d %H:%M")
+                    
+                    # Add to list
+                    idx = self.file_list.InsertItem(index, item)
+                    self.file_list.SetItem(idx, 1, size_str)
+                    self.file_list.SetItem(idx, 2, item_type)
+                    self.file_list.SetItem(idx, 3, date_str)
+                    
+                    index += 1
+                except:
+                    pass
+                    
+            # Resize columns
+            for i in range(4):
+                self.file_list.SetColumnWidth(i, wx.LIST_AUTOSIZE)
+                
+            # Update status bar
+            dir_count = sum(1 for item in items if os.path.isdir(os.path.join(path, item)))
+            file_count = len(items) - dir_count
+            self.statusbar.SetStatusText(f"{dir_count} directories, {file_count} files")
+                
         except Exception as e:
-            self.status_bar.SetLabel(f"Error editing file: {str(e)}")
+            self.statusbar.SetStatusText(f"Error: {str(e)}")
     
-    def copy_to_clipboard(self, path):
-        clipboard = wx.Clipboard.Get()
-        if clipboard.Open():
-            clipboard.SetData(wx.TextDataObject(path))
-            clipboard.Close()
-            self.status_bar.SetLabel(f"Path copied to clipboard: {path}")
+    def OnTreeActivated(self, event):
+        """Handle tree item activation"""
+        item = event.GetItem()
+        if not item:
+            return
+            
+        # Get the full path by traversing up the tree
+        path_parts = [self.tree.GetItemText(item)]
+        parent = self.tree.GetItemParent(item)
+        
+        while parent != self.root:
+            path_parts.insert(0, self.tree.GetItemText(parent))
+            parent = self.tree.GetItemParent(parent)
+            
+        # Construct the path
+        if sys.platform == "win32":
+            # On Windows, first part might be a drive letter
+            if path_parts and path_parts[0].endswith(':\\'):
+                path = path_parts[0]
+                for part in path_parts[1:]:
+                    path = os.path.join(path, part)
+            else:
+                path = os.path.join(*path_parts)
+        else:
+            # On Unix, check if the path starts with / or ~
+            if path_parts and path_parts[0] == "/":
+                path = os.path.join('/', *path_parts[1:])
+            elif path_parts and path_parts[0] == self.home_dir:
+                path = self.home_dir
+                for part in path_parts[1:]:
+                    path = os.path.join(path, part)
+            else:
+                path = os.path.join(*path_parts)
+        
+        # Check if this is a directory
+        if os.path.isdir(path):
+            self.populate_file_list(path)
+            
+            # Clear existing items and populate with subdirectories
+            self.tree.DeleteChildren(item)
+            self.add_subdirectories(item, path)
     
-    def delete_item(self, path):
-        filename = os.path.basename(path)
-        dlg = wx.MessageDialog(self, f"Are you sure you want to delete '{filename}'?",
-                              "Confirm Delete", wx.YES_NO | wx.ICON_QUESTION)
-        result = dlg.ShowModal()
+    def OnFileActivated(self, event):
+        """Handle file list item activation"""
+        index = event.GetIndex()
+        filename = self.file_list.GetItemText(index)
+        filepath = os.path.join(self.current_dir, filename)
+        
+        if os.path.isdir(filepath):
+            # Navigate to the directory
+            self.populate_file_list(filepath)
+        else:
+            # Try to open the file with default application
+            try:
+                if sys.platform == "win32":
+                    os.startfile(filepath)
+                elif sys.platform == "darwin":
+                    subprocess.call(["open", filepath])
+                else:
+                    subprocess.call(["xdg-open", filepath])
+            except Exception as e:
+                wx.MessageBox(f"Could not open the file: {str(e)}", "Error", wx.OK | wx.ICON_ERROR)
+    
+    def OnBackButton(self, event):
+        """Go to parent directory"""
+        parent_dir = os.path.dirname(self.current_dir)
+        if parent_dir and parent_dir != self.current_dir:
+            self.populate_file_list(parent_dir)
+    
+    def OnHomeButton(self, event):
+        """Go to home directory"""
+        self.populate_file_list(self.home_dir)
+    
+    def OnRefreshButton(self, event):
+        """Refresh current directory"""
+        self.populate_file_list(self.current_dir)
+    
+    def OnGoButton(self, event):
+        """Navigate to the path in the text field"""
+        path = self.path_text.GetValue()
+        if os.path.exists(path) and os.path.isdir(path):
+            self.populate_file_list(path)
+        else:
+            wx.MessageBox(f"Invalid directory: {path}", "Error", wx.OK | wx.ICON_ERROR)
+    
+    def OnNewFolder(self, event):
+        """Create a new folder in the current directory"""
+        dialog = wx.TextEntryDialog(self, "Enter name for new folder:", "New Folder")
+        if dialog.ShowModal() == wx.ID_OK:
+            folder_name = dialog.GetValue()
+            new_folder_path = os.path.join(self.current_dir, folder_name)
+            
+            try:
+                os.mkdir(new_folder_path)
+                self.populate_file_list(self.current_dir)  # Refresh
+            except Exception as e:
+                wx.MessageBox(f"Could not create folder: {str(e)}", "Error", wx.OK | wx.ICON_ERROR)
+                
+        dialog.Destroy()
+    
+    def OnCopy(self, event):
+        """Copy selected files to clipboard"""
+        selected = []
+        index = self.file_list.GetFirstSelected()
+        
+        while index != -1:
+            filename = self.file_list.GetItemText(index)
+            filepath = os.path.join(self.current_dir, filename)
+            selected.append(filepath)
+            index = self.file_list.GetNextSelected(index)
+        
+        if selected:
+            self.clipboard = selected
+            self.clipboard_action = "copy"
+            self.statusbar.SetStatusText(f"{len(selected)} items copied to clipboard")
+    
+    def OnCut(self, event):
+        """Cut selected files to clipboard"""
+        selected = []
+        index = self.file_list.GetFirstSelected()
+        
+        while index != -1:
+            filename = self.file_list.GetItemText(index)
+            filepath = os.path.join(self.current_dir, filename)
+            selected.append(filepath)
+            index = self.file_list.GetNextSelected(index)
+        
+        if selected:
+            self.clipboard = selected
+            self.clipboard_action = "cut"
+            self.statusbar.SetStatusText(f"{len(selected)} items cut to clipboard")
+    
+    def OnPaste(self, event):
+        """Paste files from clipboard"""
+        if not self.clipboard:
+            return
+            
+        error_count = 0
+        success_count = 0
+        
+        for src_path in self.clipboard:
+            try:
+                filename = os.path.basename(src_path)
+                dest_path = os.path.join(self.current_dir, filename)
+                
+                # Check if destination exists
+                if os.path.exists(dest_path):
+                    dlg = wx.MessageDialog(self, 
+                                          f"'{filename}' already exists. Overwrite?",
+                                          "Confirm Overwrite",
+                                          wx.YES_NO | wx.ICON_QUESTION)
+                    if dlg.ShowModal() != wx.ID_YES:
+                        dlg.Destroy()
+                        continue
+                    dlg.Destroy()
+                
+                # Perform copy or move
+                if os.path.isdir(src_path):
+                    if self.clipboard_action == "copy":
+                        shutil.copytree(src_path, dest_path)
+                    else:  # cut
+                        shutil.move(src_path, dest_path)
+                else:
+                    if self.clipboard_action == "copy":
+                        shutil.copy2(src_path, dest_path)
+                    else:  # cut
+                        shutil.move(src_path, dest_path)
+                        
+                success_count += 1
+            except Exception as e:
+                error_count += 1
+                wx.LogError(f"Error processing '{src_path}': {str(e)}")
+        
+        # Clear clipboard if it was a cut operation
+        if self.clipboard_action == "cut" and error_count == 0:
+            self.clipboard = []
+            
+        # Refresh and update status
+        self.populate_file_list(self.current_dir)
+        
+        if error_count:
+            self.statusbar.SetStatusText(f"Paste completed with {error_count} errors")
+        else:
+            self.statusbar.SetStatusText(f"Paste completed successfully: {success_count} items")
+    
+    def OnDelete(self, event):
+        """Delete selected files"""
+        selected = []
+        index = self.file_list.GetFirstSelected()
+        
+        while index != -1:
+            filename = self.file_list.GetItemText(index)
+            filepath = os.path.join(self.current_dir, filename)
+            selected.append(filepath)
+            index = self.file_list.GetNextSelected(index)
+        
+        if not selected:
+            return
+            
+        # Confirm deletion
+        msg = f"Are you sure you want to delete {len(selected)} item(s)?"
+        dlg = wx.MessageDialog(self, msg, "Confirm Deletion", 
+                              wx.YES_NO | wx.ICON_QUESTION)
+        
+        if dlg.ShowModal() != wx.ID_YES:
+            dlg.Destroy()
+            return
+            
         dlg.Destroy()
         
-        if result == wx.ID_YES:
+        # Delete files
+        error_count = 0
+        for path in selected:
             try:
                 if os.path.isdir(path):
                     shutil.rmtree(path)
                 else:
                     os.remove(path)
-                self.populate_file_list()
-                self.status_bar.SetLabel(f"Deleted: {path}")
             except Exception as e:
-                self.status_bar.SetLabel(f"Error deleting: {str(e)}")
+                error_count += 1
+                wx.LogError(f"Error deleting '{path}': {str(e)}")
+        
+        # Refresh and update status
+        self.populate_file_list(self.current_dir)
+        
+        if error_count:
+            self.statusbar.SetStatusText(f"Deletion completed with {error_count} errors")
+        else:
+            self.statusbar.SetStatusText(f"Deleted {len(selected)} items successfully")
     
-    def show_properties(self, path):
-        filename = os.path.basename(path)
-        is_dir = os.path.isdir(path)
-        
-        try:
-            stats = os.stat(path)
-            created = datetime.fromtimestamp(stats.st_ctime).strftime("%Y-%m-%d %H:%M:%S")
-            modified = datetime.fromtimestamp(stats.st_mtime).strftime("%Y-%m-%d %H:%M:%S")
-            accessed = datetime.fromtimestamp(stats.st_atime).strftime("%Y-%m-%d %H:%M:%S")
-            
-            size_bytes = stats.st_size if not is_dir else self.get_dir_size(path)
-            size_str = self.format_size(size_bytes)
-            
-            info = f"Name: {filename}\n"
-            info += f"Type: {'Directory' if is_dir else 'File'}\n"
-            info += f"Location: {os.path.dirname(path)}\n"
-            info += f"Size: {size_str} ({size_bytes:,} bytes)\n"
-            info += f"Created: {created}\n"
-            info += f"Modified: {modified}\n"
-            info += f"Accessed: {accessed}\n"
-            
-            # File permissions
-            if platform.system() != "Windows":
-                perms = stats.st_mode
-                info += f"Permissions: {oct(perms)[-3:]}\n"
-            
-            dlg = wx.MessageDialog(self, info, "Properties", wx.OK | wx.ICON_INFORMATION)
-            dlg.ShowModal()
-            dlg.Destroy()
-        except Exception as e:
-            self.status_bar.SetLabel(f"Error getting properties: {str(e)}")
-    
-    def get_dir_size(self, path):
-        total_size = 0
-        for dirpath, dirnames, filenames in os.walk(path):
-            for f in filenames:
-                fp = os.path.join(dirpath, f)
-                if not os.path.islink(fp):
-                    try:
-                        total_size += os.path.getsize(fp)
-                    except:
-                        pass
-        return total_size
-    
-    def on_search(self, event):
-        search_term = self.search_text.GetValue().lower()
-        if not search_term:
-            self.populate_file_list()
-            return
-        
-        self.file_list.DeleteAllItems()
-        
-        try:
-            items = os.listdir(self.current_path)
-            matching_items = []
-            
-            for item in items:
-                if search_term in item.lower():
-                    path = os.path.join(self.current_path, item)
-                    matching_items.append((item, path))
-            
-            # Add special ".." directory for going up
-            index = self.file_list.InsertItem(0, "..")
-            self.file_list.SetItem(index, 1, "")
-            self.file_list.SetItem(index, 2, "Directory")
-            self.file_list.SetItem(index, 3, "")
-            
-            # Add matching items
-            for i, (item, path) in enumerate(matching_items):
-                index = self.file_list.InsertItem(i + 1, item)
-                
-                # Set file size
-                if os.path.isfile(path):
-                    try:
-                        size = os.path.getsize(path)
-                        size_str = self.format_size(size)
-                        self.file_list.SetItem(index, 1, size_str)
-                    except:
-                        self.file_list.SetItem(index, 1, "")
-                else:
-                    self.file_list.SetItem(index, 1, "")
-                
-                # Set file type
-                if os.path.isdir(path):
-                    self.file_list.SetItem(index, 2, "Directory")
-                else:
-                    ext = os.path.splitext(item)[1].lower()
-                    if ext:
-                        self.file_list.SetItem(index, 2, ext[1:].upper() + " File")
-                    else:
-                        self.file_list.SetItem(index, 2, "File")
-                
-                # Set modification time
-                try:
-                    mod_time = os.path.getmtime(path)
-                    date_str = datetime.fromtimestamp(mod_time).strftime("%Y-%m-%d %H:%M:%S")
-                    self.file_list.SetItem(index, 3, date_str)
-                except:
-                    self.file_list.SetItem(index, 3, "")
-            
-            self.status_bar.SetLabel(f"Search results for '{search_term}': {len(matching_items)} items found")
-            
-        except Exception as e:
-            self.status_bar.SetLabel(f"Error searching: {str(e)}")
-
-
-class MethxApp(wx.Frame):
-    def __init__(self):
-        super(MethxApp, self).__init__(None, title="Methx File Explorer", size=(800, 600))
-        
-        # Create menu bar
-        menubar = wx.MenuBar()
-        
-        # File menu
-        file_menu = wx.Menu()
-        
-        open_item = file_menu.Append(wx.ID_OPEN, "Open Location...", "Open a specific location")
-        self.Bind(wx.EVT_MENU, self.on_open_location, open_item)
-        
-        file_menu.AppendSeparator()
-        
-        exit_item = file_menu.Append(wx.ID_EXIT, "Exit", "Exit the application")
-        self.Bind(wx.EVT_MENU, self.on_exit, exit_item)
-        
-        # Edit menu
-        edit_menu = wx.Menu()
-        
-        select_all_item = edit_menu.Append(wx.ID_SELECTALL, "Select All", "Select all items")
-        self.Bind(wx.EVT_MENU, self.on_select_all, select_all_item)
-        
-        # View menu
-        view_menu = wx.Menu()
-        
-        refresh_item = view_menu.Append(wx.ID_REFRESH, "Refresh", "Refresh the current view")
-        self.Bind(wx.EVT_MENU, self.on_refresh, refresh_item)
-        
-        # Help menu
-        help_menu = wx.Menu()
-        
-        about_item = help_menu.Append(wx.ID_ABOUT, "About", "About Methx File Explorer")
-        self.Bind(wx.EVT_MENU, self.on_about, about_item)
-        
-        # Add menus to menu bar
-        menubar.Append(file_menu, "File")
-        menubar.Append(edit_menu, "Edit")
-        menubar.Append(view_menu, "View")
-        menubar.Append(help_menu, "Help")
-        
-        self.SetMenuBar(menubar)
-        
-        # Create status bar
-        self.CreateStatusBar()
-        self.SetStatusText("Ready")
-        
-        # Create file explorer panel
-        self.explorer = FileExplorerPanel(self)
-        
-        # Create sizer for layout
-        sizer = wx.BoxSizer(wx.VERTICAL)
-        sizer.Add(self.explorer, 1, wx.EXPAND)
-        self.SetSizer(sizer)
-        
-        # Center on screen
-        self.Centre()
-        self.Show()
-    
-    def on_open_location(self, event):
-        dlg = wx.DirDialog(self, "Choose a directory:", style=wx.DD_DEFAULT_STYLE)
-        if dlg.ShowModal() == wx.ID_OK:
-            path = dlg.GetPath()
-            self.explorer.current_path = path
-            self.explorer.populate_file_list()
-        dlg.Destroy()
-    
-    def on_exit(self, event):
+    def OnQuit(self, event):
+        """Exit the application"""
         self.Close()
     
-    def on_select_all(self, event):
-        for i in range(self.explorer.file_list.GetItemCount()):
-            self.explorer.file_list.Select(i)
-    
-    def on_refresh(self, event):
-        self.explorer.populate_file_list()
-    
-    def on_about(self, event):
+    def OnAbout(self, event):
+        """Show about dialog"""
         info = wx.adv.AboutDialogInfo()
         info.SetName("Methx File Explorer")
         info.SetVersion("1.0")
         info.SetDescription("A simple file explorer built with wxPython")
         info.SetCopyright("(C) 2025")
+        info.AddDeveloper("Methx Developer")
         info.SetWebSite("https://example.com/methx")
         
         wx.adv.AboutBox(info)
 
 
-def main():
-    app = wx.App()
-    frame = MethxApp()
-    app.MainLoop()
+class MethxApp(wx.App):
+    def OnInit(self):
+        frame = MethxFrame()
+        frame.Show()
+        return True
 
 
 if __name__ == "__main__":
-    main()
+    app = MethxApp(False)
+    app.MainLoop()
