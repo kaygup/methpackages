@@ -1,22 +1,15 @@
 #!/bin/bash
-echo "Installing Python dependencies..."
-sudo pacman -S install python-numpy python-pyaudio
 
 # Create package directory
-echo "Creating package directory..."
-sudo mkdir -p /usr/local/share/meth-packages/wava
+mkdir -p /usr/local/share/meth-packages/macro
 
 # Copy Python script to package directory
-echo "Copying files..."
-sudo cp wava.py /usr/local/share/meth-packages/wava/
+cp macro.py /usr/local/share/meth-packages/macro/
 
 # Make it executable
-echo "Setting permissions..."
-sudo chmod +x /usr/local/share/meth-packages/wava/wava.py
+chmod +x /usr/local/share/meth-packages/macro/macro.py
 
 # Create symlink in PATH
-echo "Creating symlink..."
-sudo ln -sf /usr/local/share/meth-packages/wava/wava.py /usr/local/bin/wava
+ln -sf /usr/local/share/meth-packages/macro/macro.py /usr/local/bin/macro
 
-echo "Package NOX Audio Visualizer installed successfully"
-echo "Run 'nox' to start the visualizer or 'nox --help' for options"
+echo "Macro Text Editor installed successfully"
