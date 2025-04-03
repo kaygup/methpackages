@@ -2,150 +2,138 @@
 
 import os
 import platform
+import socket
+import getpass
 import subprocess
 import re
-from datetime import datetime
 
-# Trans flag colors in ANSI format
-COLORS = [
-    "\033[38;5;81m",  # Light Blue
-    "\033[38;5;211m", # Pink
-    "\033[38;5;255m", # White
-    "\033[38;5;211m", # Pink
-    "\033[38;5;81m"   # Light Blue
-]
+# ANSI color codes for trans flag colors
+BLUE = "\033[38;2;91;206;250m"
+PINK = "\033[38;2;245;169;184m"
+WHITE = "\033[38;2;255;255;255m"
 RESET = "\033[0m"
 
-# ASCII art
-BOY_ASCII = """
-⠀⠀⠀⢰⠶⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣠⠶⠲⣄⠀
-⠀⠀⣠⡟⠀⠈⠙⢦⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⡶⣦⣀⠀⠀⠀⠀⠀⠀⠀⠀⣠⠾⠋⠁⠀⠀⢽⡄
-⠀⠀⡿⠀⠀⠀⠀⠀⠉⠷⣄⣀⣤⠤⠤⠤⠤⢤⣷⡀⠙⢷⡄⠀⠀⠀⠀⣠⠞⠉⠀⠀⠀⠀⠀⠈⡇
-⠀⢰⡇⠀⠀⠀⠀⠀⠀⠀⠉⠳⣄⠀⠀⠀⠀⠀⠈⠁⠀⠀⠹⣦⠀⣠⡞⠁⠀⠀⠀⠀⠀⠀⠀⠀⡗
-⠀⣾⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠃⠀⠀⠀⠀⠀⠀⠀⠀⠀⠘⣻⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣏
-⠀⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢠⡇
-⠀⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣾⠂
-⠀⢿⠀⠀⠀⠀⣤⣤⣤⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣤⣤⣤⣤⣤⡀⠀⠀⠀⠀⠀⣸⠇⠀
-⠀⠘⣇⠀⠀⠀⠀⠉⠉⠛⠛⢿⣶⣦⠀⠀⠀⠀⠀⠀⢴⣾⣟⣛⡋⠋⠉⠉⠁⠀⠀⠀⠀⣴⠏⠀⠀
-⢀⣀⠙⢷⡄⠀⠀⣀⣤⣶⣾⠿⠋⠁⠀⢴⠶⠶⠄⠀⠀⠉⠙⠻⠿⣿⣷⣶⡄⠀⠀⡴⠾⠛⠛⣹⠇
-⢸⡍⠉⠉⠉⠀⠀⠈⠉⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⠀⠀⠀⠀⣬⠷⣆⣠⡤⠄⢀⣤⠞⠁⠀
-⠈⠻⣆⡀⠶⢻⣇⡴⠖⠀⠀⠀⣴⡀⣀⡴⠚⠳⠦⣤⣤⠾⠀⠀⠀⠀⠀⠘⠟⠋⠀⠀⠀⢻⣄⠀⠀
-⠀⠀⣼⠃⠀⠀⠉⠁⠀⠀⠀⠀⠈⠉⢻⡆⠀⠀⠀⠀⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⠀⠀
-⠀⢠⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣿⡀⠀⠀⢀⡇⠀⠀⠀⠀⠀⠀⠀⠀⣀⡿⠧⠿⠿⠟⠀⠀
-⠀⣾⡴⠖⠛⠳⢦⣿⣶⣄⣀⠀⠀⠀⠀⠘⢷⣀⠀⣸⠃⠀⠀⠀⣀⣀⣤⠶⠚⠉⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠈⢷⡀⠈⠻⠦⠀⠀⠀⠀⠉⠉⠁⠀⠀⠀⠀⠹⣆⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⢀⡴⠟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⢳⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⢠⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠻⡄⠀⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠈⠉⠛⠛⢲⡗⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢻⡆⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣸⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢸⡇⠀⠀⠀⠀⠀⠀⠀
-⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠙⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⠋⠀⠀⠀⠀⠀⠀⠀
-"""
-
-def get_system_info():
-    """Get system information"""
-    info = {}
-    
-    # Hostname and username
-    info["user"] = os.getenv("USER", "unknown")
-    info["hostname"] = platform.node()
-    
-    # OS Information
-    info["os"] = platform.system()
-    info["kernel"] = platform.release()
-    
-    # Uptime
-    try:
-        with open("/proc/uptime", "r") as f:
-            uptime_seconds = float(f.read().split()[0])
-            days, remainder = divmod(uptime_seconds, 86400)
-            hours, remainder = divmod(remainder, 3600)
-            minutes, seconds = divmod(remainder, 60)
-            info["uptime"] = f"{int(days)}d {int(hours)}h {int(minutes)}m {int(seconds)}s"
-    except:
-        info["uptime"] = "Unknown"
-    
-    # Shell
-    info["shell"] = os.path.basename(os.getenv("SHELL", "unknown"))
-    
-    # Desktop Environment
-    info["de"] = os.getenv("XDG_CURRENT_DESKTOP", "Unknown")
-    
-    # Terminal
-    info["terminal"] = os.getenv("TERM", "Unknown")
-    
-    # CPU
-    try:
-        with open("/proc/cpuinfo", "r") as f:
-            cpu_info = f.read()
-        model_name = re.search(r"model name\s*:\s*(.*)", cpu_info)
-        if model_name:
-            info["cpu"] = model_name.group(1)
-        else:
-            info["cpu"] = "Unknown"
-    except:
-        info["cpu"] = "Unknown"
-    
-    # Memory
-    try:
-        with open("/proc/meminfo", "r") as f:
-            mem_info = f.read()
-        total_memory = re.search(r"MemTotal:\s*(\d+)", mem_info)
-        if total_memory:
-            mem_kb = int(total_memory.group(1))
-            info["memory"] = f"{mem_kb // 1024} MB"
-        else:
-            info["memory"] = "Unknown"
-    except:
-        info["memory"] = "Unknown"
-    
-    return info
-
-def display_fetch():
-    info = get_system_info()
-    
-    # Split the ASCII art into lines
-    ascii_lines = BOY_ASCII.strip().split('\n')
-    
-    # Prepare the system info lines
-    info_lines = [
-        f"{info['user']}@{info['hostname']}",
-        f"OS: {info['os']}",
-        f"Kernel: {info['kernel']}",
-        f"Uptime: {info['uptime']}",
-        f"Shell: {info['shell']}",
-        f"DE: {info['de']}",
-        f"Terminal: {info['terminal']}",
-        f"CPU: {info['cpu']}",
-        f"Memory: {info['memory']}",
+# ASCII art with trans flag colors (alternating lines with BLUE, PINK, WHITE, PINK, BLUE)
+def get_ascii_art():
+    ascii_art = [
+        f"{BLUE}⠀⠀⠀⠀⠀⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{BLUE}⠀⠀⠀⠀⣸⣿⣿⣿⣶⣄⠀⠀⠀⠀⠀⠀⠀⢻⣷⣦⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣀⣤⣠⠄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{BLUE}⠀⠀⠀⢀⣿⣿⣿⣿⣿⣿⣿⡀⠴⣾⣿⣿⣿⣤⣿⣿⣿⣿⣷⣦⣄⠀⠀⠀⠀⠀⠀⣀⣤⣾⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{BLUE}⠀⠀⠀⣼⣿⣿⣿⣿⣿⣿⣿⣿⣷⣤⡙⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣧⣀⠀⠀⣤⣾⣿⣿⣿⣿⣿⣿⣿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{PINK}⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣷⣦⣼⣿⣿⣿⣿⣿⣿⣿⣿⣿⣾⣾⣿⣿⣿⣿⣿⣿⣿⣿⡇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{PINK}⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{PINK}⠀⠀⠀⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⠇⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{PINK}⠀⠀⠀⢸⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⢹⣿⢸⣿⣿⡏⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{WHITE}⠀⠀⠀⠀⢻⣿⣿⡿⠿⠟⠻⠿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣌⣃⣼⣿⡟⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{WHITE}⢀⣠⣤⣴⣿⣿⣍⣠⣶⣶⣶⣦⡈⢻⣿⣿⣿⣿⣿⣿⡿⠟⠋⠉⠋⠉⠛⢿⣿⣿⣿⣿⣿⠅⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{WHITE}⠈⠛⠛⠛⣿⣿⣿⣿⣿⣿⣿⣿⣿⠾⠿⣿⣿⣿⣿⣿⣤⣴⣶⣿⣿⣷⣶⣀⢹⣿⣿⣤⣶⣶⡶⠂⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{WHITE}⠀⠀⠀⣰⣯⣛⣉⢩⡟⠟⢿⣿⣿⣦⣤⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⠟⠋⠁⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{PINK}⠀⠀⢰⠿⠿⠟⠳⣤⣶⣿⣿⣿⣿⣿⣿⣿⣿⣿⡿⢿⣿⣿⣿⣍⣀⡤⠀⠝⢉⣹⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{PINK}⠀⠀⠀⠀⠀⠀⠀⠀⠉⠻⠿⣿⣿⣦⣉⣡⣬⣙⣁⣼⣿⣿⣿⣿⣿⣿⣷⠾⠟⠻⢿⡿⣧⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{PINK}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠉⢉⣹⣿⣿⣿⣿⣿⣿⣿⣉⣉⣭⣍⣀⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{PINK}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠻⠿⣷⣾⣿⣿⣿⣿⣿⣿⡿⠟⣓⣈⣅⣙⡿⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{BLUE}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⢀⣾⣿⣿⣿⣿⣿⡟⢋⣤⣴⣿⣿⣿⣿⣿⣿⣧⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{BLUE}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠾⠿⢿⣿⣿⣿⠏⣴⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⣿⡆⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
+        f"{BLUE}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣾⣿⣿⣿⣦⠹⡇⣾⣿⣧⢹⣿⡿⠛⢻⣿⣿⣿⡄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⡆⠀⠀⠀⠀⠀{RESET}",
+        f"{BLUE}⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠈⣿⣿⣿⣿⣶⣤⣀⣉⣁⠈⠠⣤⣶⣿⣿⣿⣿⣷⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣹⣆⠀⠀⠀⠀{RESET}",
     ]
     
-    # Calculate how many color blocks we need
-    color_count = max(len(ascii_lines), len(info_lines))
+    return "\n".join(ascii_art)
+
+def get_system_info():
+    username = getpass.getuser()
+    hostname = socket.gethostname()
+    os_info = platform.platform()
+    kernel = platform.release()
     
-    # Generate color distribution
-    color_indices = []
-    for i in range(color_count):
-        idx = int(i * len(COLORS) / color_count)
-        color_indices.append(idx)
+    try:
+        shell = os.environ.get('SHELL', 'Unknown')
+    except:
+        shell = "Unknown"
     
-    # Print the fetch display
-    print()  # Empty line for better spacing
+    try:
+        cpu_info = ""
+        with open('/proc/cpuinfo', 'r') as f:
+            for line in f:
+                if 'model name' in line:
+                    cpu_info = re.sub('.*model name.*:', '', line, 1).strip()
+                    break
+    except:
+        cpu_info = "Unknown CPU"
     
-    for i in range(max(len(ascii_lines), len(info_lines))):
-        if i < len(ascii_lines):
-            ascii_line = ascii_lines[i]
-        else:
-            ascii_line = ""
+    try:
+        memory_info = ""
+        with open('/proc/meminfo', 'r') as f:
+            for line in f:
+                if 'MemTotal' in line:
+                    memory_info = line.split(':')[1].strip()
+                    break
+    except:
+        memory_info = "Unknown Memory"
+
+    # Detect desktop environment
+    desktop_env = os.environ.get('XDG_CURRENT_DESKTOP', 'Unknown')
+    
+    info = [
+        f"{BLUE}OS{RESET}: {WHITE}{os_info}{RESET}",
+        f"{PINK}Host{RESET}: {WHITE}{hostname}{RESET}",
+        f"{WHITE}Kernel{RESET}: {PINK}{kernel}{RESET}",
+        f"{PINK}Uptime{RESET}: {WHITE}{get_uptime()}{RESET}",
+        f"{BLUE}Shell{RESET}: {WHITE}{shell}{RESET}",
+        f"{PINK}DE{RESET}: {WHITE}{desktop_env}{RESET}",
+        f"{WHITE}CPU{RESET}: {PINK}{cpu_info}{RESET}",
+        f"{BLUE}Memory{RESET}: {WHITE}{memory_info}{RESET}",
+        f"{PINK}User{RESET}: {WHITE}{username}{RESET}",
+    ]
+    
+    return "\n".join(info)
+
+def get_uptime():
+    try:
+        with open('/proc/uptime', 'r') as f:
+            uptime_seconds = float(f.readline().split()[0])
             
-        if i < len(info_lines):
-            info_line = info_lines[i]
+        days = int(uptime_seconds / 86400)
+        hours = int((uptime_seconds % 86400) / 3600)
+        minutes = int((uptime_seconds % 3600) / 60)
+        
+        if days > 0:
+            return f"{days}d {hours}h {minutes}m"
+        elif hours > 0:
+            return f"{hours}h {minutes}m"
         else:
-            info_line = ""
-            
-        color = COLORS[color_indices[i % len(COLORS)]]
-        print(f"{color}{ascii_line}{' ' * (40 - len(ascii_line))}{info_line}{RESET}")
+            return f"{minutes}m"
+    except:
+        return "Unknown"
+
+def main():
+    ascii_art = get_ascii_art()
+    system_info = get_system_info()
     
-    print()  # Empty line for better spacing
+    # Print with proper spacing
+    ascii_lines = ascii_art.split('\n')
+    info_lines = system_info.split('\n')
+    
+    # Ensure both have the same number of lines by padding the shorter one
+    max_lines = max(len(ascii_lines), len(info_lines))
+    ascii_lines += [''] * (max_lines - len(ascii_lines))
+    info_lines += [''] * (max_lines - len(info_lines))
+    
+    # Calculate the width of the ASCII art for proper spacing
+    # Strip ANSI color codes for width calculation
+    ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+    ascii_width = max([len(ansi_escape.sub('', line)) for line in ascii_lines]) if ascii_lines else 0
+    
+    # Print the combined output
+    print("\n")  # Add some space at the top
+    for i in range(max_lines):
+        if i < len(ascii_lines) and i < len(info_lines):
+            print(f"{ascii_lines[i]}{' ' * 5}{info_lines[i]}")
+        elif i < len(ascii_lines):
+            print(ascii_lines[i])
+        elif i < len(info_lines):
+            print(f"{' ' * (ascii_width + 5)}{info_lines[i]}")
+    print("\n")  # Add some space at the bottom
 
 if __name__ == "__main__":
-    display_fetch()
+    main()
