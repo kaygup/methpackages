@@ -43,8 +43,8 @@ class MethxFrame(wx.Frame):
         self.file_list.InsertColumn(2, "Type")
         self.file_list.InsertColumn(3, "Modified")
         
-        # Path display
-        self.path_text = wx.TextCtrl(self.file_panel)
+        # Path display - FIX: Added wxTE_PROCESS_ENTER style flag
+        self.path_text = wx.TextCtrl(self.file_panel, style=wx.TE_PROCESS_ENTER)
         self.path_text.SetValue(self.current_dir)
         
         # Buttons
