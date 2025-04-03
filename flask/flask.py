@@ -1,237 +1,269 @@
-#!/usr/bin/env python3
 import os
 import sys
 import threading
 import subprocess
 from kivy.app import App
 from kivy.uix.boxlayout import BoxLayout
-from kivy.uix.button import Button
 from kivy.uix.label import Label
-from kivy.uix.spinner import Spinner
+from kivy.uix.button import Button
 from kivy.uix.filechooser import FileChooserListView
+from kivy.uix.spinner import Spinner
 from kivy.uix.progressbar import ProgressBar
 from kivy.clock import Clock
 from kivy.core.window import Window
+from kivy.uix.popup import Popup
 
 class FlaskApp(App):
     def build(self):
         # Set window properties
         Window.size = (800, 600)
-        Window.clearcolor = (0.1, 0.1, 0.1, 1)
+        Window.minimum_width, Window.minimum_height = 700, 500
         self.title = 'Flask - USB ISO Flasher'
         
         # Main layout
-        self.main_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        main_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
         
         # Title
         title_label = Label(
-            text='Flask USB ISO Flasher',
-            font_size=24,
-            size_hint=(1, 0.1)
+            text="Flask USB ISO Flasher",
+            font_size='24sp',
+            size_hint_y=None,
+            height=50
         )
-        self.main_layout.add_widget(title_label)
+        main_layout.add_widget(title_label)
         
-        # File selection
-        file_label = Label(
-            text='Select ISO File:',
-            size_hint=(1, 0.05),
-            halign='left'
-        )
-        file_label.bind(size=self._update_label_text_size)
-        self.main_layout.add_widget(file_label)
+        # File selection layout
+        file_layout = BoxLayout(orientation='vertical', size_hint_y=0.4)
+        file_label = Label(text="Select ISO file:", size_hint_y=None, height=30, halign='left')
+        file_label.bind(size=lambda s, w: setattr(file_label, 'text_size', w))
+        file_layout.add_widget(file_label)
         
         self.file_chooser = FileChooserListView(
-            path=os.path.expanduser('~'),
-            filters=['*.iso'],
-            size_hint=(1, 0.4)
+            path=os.path.expanduser("~"),
+            filters=['*.iso']
         )
-        self.main_layout.add_widget(self.file_chooser)
+        file_layout.add_widget(self.file_chooser)
+        main_layout.add_widget(file_layout)
         
-        # USB device selection
-        usb_label = Label(
-            text='Select USB Device:',
-            size_hint=(1, 0.05),
-            halign='left'
-        )
-        usb_label.bind(size=self._update_label_text_size)
-        self.main_layout.add_widget(usb_label)
+        # USB device selection layout
+        usb_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=50)
+        usb_label = Label(text="Select USB device:", size_hint_x=0.3)
+        self.usb_spinner = Spinner(text='No devices found', values=[])
+        refresh_button = Button(text="Refresh", size_hint_x=0.2)
+        refresh_button.bind(on_release=self.refresh_usb_devices)
         
-        self.usb_spinner = Spinner(
-            text='Select USB Drive',
-            values=self._get_usb_devices(),
-            size_hint=(1, 0.1)
-        )
-        self.main_layout.add_widget(self.usb_spinner)
+        usb_layout.add_widget(usb_label)
+        usb_layout.add_widget(self.usb_spinner)
+        usb_layout.add_widget(refresh_button)
+        main_layout.add_widget(usb_layout)
         
-        # Refresh button for USB devices
-        refresh_button = Button(
-            text='Refresh USB Devices',
-            size_hint=(1, 0.1)
-        )
-        refresh_button.bind(on_press=self._refresh_usb_devices)
-        self.main_layout.add_widget(refresh_button)
+        # Progress layout
+        progress_layout = BoxLayout(orientation='vertical', size_hint_y=0.2)
+        self.progress_label = Label(text="Ready", halign='left')
+        self.progress_label.bind(size=lambda s, w: setattr(self.progress_label, 'text_size', w))
+        self.progress_bar = ProgressBar(max=100, value=0)
         
-        # Progress bar
-        self.progress_label = Label(
-            text='Ready',
-            size_hint=(1, 0.05)
-        )
-        self.main_layout.add_widget(self.progress_label)
+        progress_layout.add_widget(self.progress_label)
+        progress_layout.add_widget(self.progress_bar)
+        main_layout.add_widget(progress_layout)
         
-        self.progress_bar = ProgressBar(
-            max=100,
-            value=0,
-            size_hint=(1, 0.05)
-        )
-        self.main_layout.add_widget(self.progress_bar)
+        # Action buttons
+        button_layout = BoxLayout(orientation='horizontal', size_hint_y=None, height=50)
+        flash_button = Button(text="Flash ISO", background_color=(0.2, 0.7, 0.2, 1))
+        flash_button.bind(on_release=self.flash_iso)
+        cancel_button = Button(text="Exit", background_color=(0.7, 0.2, 0.2, 1))
+        cancel_button.bind(on_release=self.exit_app)
         
-        # Flash button
-        self.flash_button = Button(
-            text='Flash ISO to USB',
-            size_hint=(1, 0.1),
-            background_color=(0.8, 0.2, 0.2, 1)
-        )
-        self.flash_button.bind(on_press=self._flash_iso)
-        self.main_layout.add_widget(self.flash_button)
+        button_layout.add_widget(flash_button)
+        button_layout.add_widget(cancel_button)
+        main_layout.add_widget(button_layout)
         
-        return self.main_layout
+        # Initialize USB device list
+        self.refresh_usb_devices()
+        
+        return main_layout
     
-    def _update_label_text_size(self, instance, value):
-        instance.text_size = (value[0], None)
+    def refresh_usb_devices(self, instance=None):
+        self.progress_label.text = "Scanning for USB devices..."
+        threading.Thread(target=self._get_usb_devices).start()
     
     def _get_usb_devices(self):
-        devices = []
         try:
-            if sys.platform == 'linux':
-                result = subprocess.run(['lsblk', '-d', '-o', 'NAME,SIZE,MODEL', '-n'], 
-                                       capture_output=True, text=True)
-                for line in result.stdout.strip().split('\n'):
+            # For Linux
+            if sys.platform.startswith('linux'):
+                cmd = "lsblk -d -o NAME,SIZE,MODEL,TRAN | grep 'usb'"
+                output = subprocess.check_output(cmd, shell=True).decode('utf-8')
+                devices = []
+                for line in output.strip().split('\n'):
                     if line:
                         parts = line.split()
-                        if parts[0].startswith('sd'):
-                            name = '/dev/' + parts[0]
+                        if len(parts) >= 2:
+                            name = parts[0]
                             size = parts[1]
-                            model = ' '.join(parts[2:]) if len(parts) > 2 else 'Unknown'
-                            devices.append(f"{name} ({size}, {model})")
-            elif sys.platform == 'darwin':  # macOS
-                result = subprocess.run(['diskutil', 'list'], capture_output=True, text=True)
-                for line in result.stdout.split('\n'):
-                    if '/dev/disk' in line and 'external' in line.lower():
-                        disk_id = line.split()[0]
-                        devices.append(disk_id)
-            elif sys.platform == 'win32':  # Windows
-                # Simplified for this example
-                import win32api
-                drives = win32api.GetLogicalDriveStrings().split('\000')[:-1]
-                for drive in drives:
-                    if win32api.GetDriveType(drive) == win32api.DRIVE_REMOVABLE:
-                        devices.append(drive)
+                            model = ' '.join(parts[2:-1]) if len(parts) > 3 else "USB Device"
+                            devices.append(f"/dev/{name} ({size}) - {model}")
+            
+            # For macOS
+            elif sys.platform == 'darwin':
+                cmd = "diskutil list | grep external"
+                output = subprocess.check_output(cmd, shell=True).decode('utf-8')
+                devices = []
+                for line in output.strip().split('\n'):
+                    if line:
+                        parts = line.split()
+                        if len(parts) >= 1:
+                            name = parts[0]
+                            devices.append(f"{name} - External Device")
+            
+            # For Windows
+            elif sys.platform == 'win32':
+                cmd = "wmic diskdrive where MediaType='Removable Media' get DeviceID,Size,Model /format:list"
+                output = subprocess.check_output(cmd, shell=True).decode('utf-8')
+                devices = []
+                current_device = {}
+                for line in output.strip().split('\n'):
+                    line = line.strip()
+                    if not line:
+                        if current_device and 'DeviceID' in current_device and 'Size' in current_device:
+                            size_gb = int(current_device['Size']) / (1024**3)
+                            model = current_device.get('Model', 'USB Device')
+                            devices.append(f"{current_device['DeviceID']} ({size_gb:.1f} GB) - {model}")
+                        current_device = {}
+                    elif '=' in line:
+                        key, value = line.split('=', 1)
+                        current_device[key.strip()] = value.strip()
+            
+            else:
+                devices = ["Unsupported platform"]
+            
+            # Update UI on the main thread
+            Clock.schedule_once(lambda dt: self._update_device_list(devices), 0)
+            
         except Exception as e:
-            print(f"Error getting USB devices: {e}")
-        
-        return devices if devices else ['No USB devices found']
+            Clock.schedule_once(lambda dt: self._handle_device_scan_error(str(e)), 0)
     
-    def _refresh_usb_devices(self, instance):
-        self.usb_spinner.values = self._get_usb_devices()
-        self.usb_spinner.text = 'Select USB Drive'
+    def _update_device_list(self, devices):
+        if not devices:
+            self.usb_spinner.text = "No USB devices found"
+            self.usb_spinner.values = []
+        else:
+            self.usb_spinner.values = devices
+            self.usb_spinner.text = devices[0]
+        self.progress_label.text = f"Found {len(devices)} USB device(s)"
     
-    def _flash_iso(self, instance):
-        if not self.file_chooser.selection or not self.usb_spinner.text or self.usb_spinner.text == 'Select USB Drive' or self.usb_spinner.text == 'No USB devices found':
-            self.progress_label.text = 'Error: Please select both ISO file and USB device'
+    def _handle_device_scan_error(self, error_msg):
+        self.usb_spinner.text = "Error scanning devices"
+        self.usb_spinner.values = []
+        self.progress_label.text = f"Error: {error_msg}"
+    
+    def flash_iso(self, instance):
+        selected_file = self.file_chooser.selection
+        if not selected_file:
+            self._show_error("Please select an ISO file first")
             return
         
-        iso_path = self.file_chooser.selection[0]
-        usb_device = self.usb_spinner.text.split()[0]  # Extract device path
+        selected_device = self.usb_spinner.text
+        if selected_device in ["No USB devices found", "No devices found", "Error scanning devices", "Unsupported platform"]:
+            self._show_error("Please select a valid USB device")
+            return
         
-        # Confirm before flashing
-        confirm_layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
-        confirm_layout.add_widget(Label(text=f'Warning: This will erase all data on {usb_device}!\nContinue?'))
+        # Extract the device path from the spinner text
+        device_path = selected_device.split()[0]
         
-        button_layout = BoxLayout(orientation='horizontal', spacing=10, size_hint=(1, 0.3))
+        # Confirm flashing
+        content = BoxLayout(orientation='vertical', padding=10, spacing=10)
+        message = f"This will erase ALL data on {selected_device}.\nAre you sure you want to continue?"
+        content.add_widget(Label(text=message))
         
-        def cancel_callback(instance):
-            self.main_layout.remove_widget(confirm_layout)
-            self.progress_label.text = 'Operation cancelled'
+        buttons = BoxLayout(size_hint_y=None, height=50)
+        cancel_btn = Button(text="Cancel")
+        proceed_btn = Button(text="Proceed", background_color=(0.8, 0.2, 0.2, 1))
         
-        def proceed_callback(instance):
-            self.main_layout.remove_widget(confirm_layout)
-            self._start_flashing(iso_path, usb_device)
+        buttons.add_widget(cancel_btn)
+        buttons.add_widget(proceed_btn)
+        content.add_widget(buttons)
         
-        cancel_button = Button(text='Cancel', background_color=(0.3, 0.3, 0.3, 1))
-        cancel_button.bind(on_press=cancel_callback)
+        popup = Popup(title="Warning", content=content, size_hint=(0.8, 0.4), auto_dismiss=False)
+        cancel_btn.bind(on_release=popup.dismiss)
+        proceed_btn.bind(on_release=lambda btn: self._start_flashing(popup, selected_file[0], device_path))
         
-        proceed_button = Button(text='Proceed', background_color=(0.8, 0.2, 0.2, 1))
-        proceed_button.bind(on_press=proceed_callback)
-        
-        button_layout.add_widget(cancel_button)
-        button_layout.add_widget(proceed_button)
-        confirm_layout.add_widget(button_layout)
-        
-        self.main_layout.add_widget(confirm_layout)
+        popup.open()
     
-    def _start_flashing(self, iso_path, usb_device):
-        self.flash_button.disabled = True
-        self.progress_label.text = 'Flashing in progress... Do not remove USB device!'
+    def _start_flashing(self, popup, iso_path, device_path):
+        popup.dismiss()
+        self.progress_label.text = "Preparing to flash..."
         self.progress_bar.value = 0
-        
-        # Start flashing in a separate thread
-        threading.Thread(target=self._flash_process, args=(iso_path, usb_device)).start()
+        threading.Thread(target=self._flash_iso_thread, args=(iso_path, device_path)).start()
     
-    def _flash_process(self, iso_path, usb_device):
+    def _flash_iso_thread(self, iso_path, device_path):
         try:
-            # Get file size for progress calculation
-            file_size = os.path.getsize(iso_path)
-            
-            # Command for different platforms
-            if sys.platform == 'linux' or sys.platform == 'darwin':
-                cmd = ['dd', f'if={iso_path}', f'of={usb_device}', 'bs=4M', 'status=progress']
+            # Command to flash ISO to USB
+            if sys.platform.startswith('linux'):
+                cmd = f"dd bs=4M if='{iso_path}' of='{device_path}' status=progress"
+            elif sys.platform == 'darwin':
+                cmd = f"dd bs=4m if='{iso_path}' of='{device_path}' status=progress"
             elif sys.platform == 'win32':
-                # Windows would use different tools like PowerShell
-                # Simplified for this example
-                from shutil import copyfile
-                copyfile(iso_path, usb_device)
-                Clock.schedule_once(lambda dt: self._update_progress(100), 0)
-                Clock.schedule_once(lambda dt: self._flash_completed(), 0)
+                # For Windows, we'll use PowerShell as dd is not natively available
+                # This is a simple example and might not work perfectly
+                cmd = f'powershell -command "Copy-Item -Path \'{iso_path}\' -Destination \'{device_path}\' -PassThru | ForEach-Object {{$_.PercentComplete}}"'
+            else:
+                Clock.schedule_once(lambda dt: self._update_progress("Unsupported platform", -1), 0)
                 return
+
+            process = subprocess.Popen(
+                cmd, 
+                shell=True, 
+                stdout=subprocess.PIPE, 
+                stderr=subprocess.STDOUT,
+                universal_newlines=True
+            )
             
-            # Execute dd command and capture output for progress
-            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+            # For tracking progress
+            total_size = os.path.getsize(iso_path)
+            current_progress = 0
             
-            # Monitor the process
-            while process.poll() is None:
-                output = process.stderr.readline()
-                if 'bytes' in output:
+            for line in iter(process.stdout.readline, ''):
+                # Try to parse progress from dd output
+                if 'bytes transferred' in line:
                     try:
-                        transferred = int(output.split()[0])
-                        progress = min(100, int((transferred / file_size) * 100))
-                        Clock.schedule_once(lambda dt, p=progress: self._update_progress(p), 0)
+                        transferred = int(line.split('bytes transferred')[0].strip())
+                        percent = min(100, int(transferred * 100 / total_size))
+                        current_progress = percent
                     except:
                         pass
+                
+                # Update UI
+                Clock.schedule_once(lambda dt, p=current_progress, m=line: self._update_progress(m, p), 0)
             
-            if process.returncode == 0:
-                Clock.schedule_once(lambda dt: self._flash_completed(), 0)
+            # Wait for process to complete
+            returncode = process.wait()
+            
+            if returncode == 0:
+                Clock.schedule_once(lambda dt: self._update_progress("Flashing completed successfully!", 100), 0)
             else:
-                Clock.schedule_once(lambda dt: self._flash_failed(), 0)
+                Clock.schedule_once(lambda dt: self._update_progress("Error: Flashing failed with return code " + str(returncode), -1), 0)
                 
         except Exception as e:
-            Clock.schedule_once(lambda dt, error=str(e): self._flash_error(error), 0)
+            Clock.schedule_once(lambda dt: self._update_progress("Error: " + str(e), -1), 0)
     
-    def _update_progress(self, progress):
-        self.progress_bar.value = progress
-        self.progress_label.text = f'Progress: {progress}%'
+    def _update_progress(self, message, percent):
+        self.progress_label.text = message
+        if percent >= 0:
+            self.progress_bar.value = percent
     
-    def _flash_completed(self):
-        self.progress_bar.value = 100
-        self.progress_label.text = 'Flashing completed successfully!'
-        self.flash_button.disabled = False
+    def _show_error(self, message):
+        content = BoxLayout(orientation='vertical', padding=10)
+        content.add_widget(Label(text=message))
+        button = Button(text="OK", size_hint_y=None, height=50)
+        content.add_widget(button)
+        
+        popup = Popup(title="Error", content=content, size_hint=(0.7, 0.3), auto_dismiss=False)
+        button.bind(on_release=popup.dismiss)
+        popup.open()
     
-    def _flash_failed(self):
-        self.progress_label.text = 'Flashing failed!'
-        self.flash_button.disabled = False
-    
-    def _flash_error(self, error):
-        self.progress_label.text = f'Error: {error}'
-        self.flash_button.disabled = False
+    def exit_app(self, instance):
+        App.get_running_app().stop()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     FlaskApp().run()
