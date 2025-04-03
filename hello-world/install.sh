@@ -1,23 +1,38 @@
 #!/bin/bash
 
-# Install script for hello-world package
-# This should be placed in the hello-world directory in your repository
+# Check if running as root
+if [ "$EUID" -ne 0 ]; then
+  echo "Please run as root"
+  exit 1
+fi
 
-# Create the target directory if it doesn't exist
-mkdir -p /usr/local/bin
+# Install dependencies
+if [ -f /etc/arch-release ]; then
+    echo "Detected Arch Linux"
+    pacman -S --needed gcc make curl libcurl-devel
+elif [ -f /etc/debian_version ]; then
+    echo "Detected Debian/Ubuntu"
+    apt-get update
+    apt-get install -y gcc make libcurl4-openssl-dev
+elif [ -f /etc/fedora-release ]; then
+    echo "Detected Fedora"
+    dnf install -y gcc make libcurl-devel
+else
+    echo "Unsupported distribution. Please install gcc, make, and libcurl manually."
+fi
 
-# Copy the Python script to the bin directory
-cp hello-world.py /usr/local/bin/hello-world
+# Compile and install meth
+make
+make install
 
-# Make it executable
-chmod +x /usr/local/bin/hello-world
+# Create required directories
+mkdir -p /etc/meth
+mkdir -p /usr/local/meth/packages
+mkdir -p /tmp/meth
 
-# Create a simple wrapper script for easier execution
-cat > /usr/local/bin/hello-world << EOF
-#!/usr/bin/env python3
-# Hello World package installed via meth package manager
-
-print("Hello, World!")
-EOF
-
-echo "hello-world package installed successfully!"
+echo "Meth package manager installed successfully!"
+echo "Usage:"
+echo "  sudo meth cook PACKAGE    - Install a package"
+echo "  sudo meth break PACKAGE   - Remove a package"
+echo "  sudo meth update          - Update package index"
+echo "  sudo meth sync            - Synchronize all packages"
