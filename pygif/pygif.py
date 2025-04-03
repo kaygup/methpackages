@@ -17,10 +17,25 @@ def download_gif(url, temp_dir):
     """Download a GIF from a URL to a temporary file."""
     try:
         temp_file = os.path.join(temp_dir, "temp_gif.gif")
-        urllib.request.urlretrieve(url, temp_file)
+        
+        # Create a request with a User-Agent header to mimic a browser
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        req = urllib.request.Request(url, headers=headers)
+        
+        # Download the file
+        with urllib.request.urlopen(req) as response, open(temp_file, 'wb') as out_file:
+            data = response.read()
+            out_file.write(data)
+        
         return temp_file
     except Exception as e:
         print(f"Error downloading GIF: {e}")
+        print("Tips to resolve:")
+        print("- Check if the URL is correct and accessible")
+        print("- Some websites block direct image access")
+        print("- Try downloading the GIF manually and use the local path instead")
         sys.exit(1)
 
 def get_terminal_size():
@@ -134,20 +149,30 @@ def play_gif(stdscr, gif_path):
 def main():
     """Main function."""
     parser = argparse.ArgumentParser(description="Play GIFs in terminal")
-    parser.add_argument("url", help="URL of the GIF to play")
+    parser.add_argument("url", help="URL or local path of the GIF to play")
     args = parser.parse_args()
     
     if not args.url:
-        print("Usage: pygif <gif_url>")
+        print("Usage: pygif <gif_url_or_path>")
         sys.exit(1)
     
-    # Create temporary directory
-    with tempfile.TemporaryDirectory() as temp_dir:
-        # Download GIF
-        gif_path = download_gif(args.url, temp_dir)
+    # Check if input is a URL or local file
+    if args.url.startswith(('http://', 'https://')):
+        # Create temporary directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            # Download GIF
+            gif_path = download_gif(args.url, temp_dir)
+            
+            # Play GIF
+            curses.wrapper(play_gif, gif_path)
+    else:
+        # Assume it's a local file
+        if not os.path.exists(args.url):
+            print(f"Error: File '{args.url}' not found")
+            sys.exit(1)
         
         # Play GIF
-        curses.wrapper(play_gif, gif_path)
+        curses.wrapper(play_gif, args.url)
 
 if __name__ == "__main__":
     main()
