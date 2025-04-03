@@ -1,17 +1,13 @@
 #!/bin/bash
 
-echo "Uninstalling NOX Audio Visualizer..."
-
 # Remove symlink
-if [ -L /usr/local/bin/wava ]; then
-    sudo rm /usr/local/bin/wava
-    echo "Removed symlink"
+if [ -L /usr/local/bin/macro ]; then
+    rm /usr/local/bin/macro
 fi
 
 # Remove package directory
-if [ -d /usr/local/share/meth-packages/wava ]; then
-    sudo rm -rf /usr/local/share/meth-packages/wava
-    echo "Removed package files"
+if [ -d /usr/local/share/meth-packages/macro ]; then
+    rm -rf /usr/local/share/meth-packages/macro
 fi
 
-echo "NOX Audio Visualizer uninstalled successfully"
+echo "Macro Text Editor uninstalled successfully"
