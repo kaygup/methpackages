@@ -2,254 +2,271 @@
 import curses
 import random
 import time
-from curses import wrapper
+import math
+from collections import deque
 
 def main(stdscr):
-    # Setup
-    curses.curs_set(0)  # Hide cursor
-    stdscr.clear()
-    
-    # Initialize colors if terminal supports them
+    # Initialize colors
     if curses.has_colors():
         curses.start_color()
-        curses.init_pair(1, curses.COLOR_CYAN, curses.COLOR_BLACK)    # Light water
-        curses.init_pair(2, curses.COLOR_BLUE, curses.COLOR_BLACK)    # Deep water
-        curses.init_pair(3, curses.COLOR_WHITE, curses.COLOR_BLACK)   # Foam/bubbles
-        curses.init_pair(4, curses.COLOR_GREEN, curses.COLOR_BLACK)   # Plants
-        curses.init_pair(5, curses.COLOR_YELLOW, curses.COLOR_BLACK)  # Sunlight
+        curses.use_default_colors()
+        for i in range(0, curses.COLORS):
+            curses.init_pair(i + 1, i, -1)
     
-    # Get screen dimensions
-    height, width = stdscr.getmaxyx()
+    # Hide cursor
+    curses.curs_set(0)
     
-    # Waterfall parameters
-    waterfall_width = min(width - 4, 60)  # Width of waterfall
-    waterfall_left = (width - waterfall_width) // 2  # Center the waterfall
-    waterfall_right = waterfall_left + waterfall_width
-    waterfall_top = 2  # Top of the waterfall
-    pool_top = height - 10  # Top of the pool
+    # Get terminal dimensions
+    max_y, max_x = stdscr.getmaxyx()
     
-    # Create water particles
-    particles = []
-    for i in range(waterfall_width * 8):  # More particles for denser waterfall
-        x = random.randint(waterfall_left, waterfall_right - 1)
-        y = random.randint(waterfall_top, pool_top)
-        speed = random.uniform(0.5, 1.5)
-        particles.append({"x": x, "y": y, "speed": speed, "char": "│", "color": 1})
+    # Set up the waterfall
+    waterfall_width = max_x - 4
+    waterfall_x = 2
     
-    # Create bubbles/foam
+    # Water animation parameters
+    water_frames = []
+    for i in range(6):
+        frame = []
+        for x in range(waterfall_width):
+            frame.append(max_y // 2 + int(math.sin(x / 5 + i / 2) * 2))
+        water_frames.append(frame)
+    
+    # Falling water particles
+    water_particles = []
+    
+    # Foam particles at base of waterfall
+    foam_particles = []
+    
+    # Bubbles floating up
     bubbles = []
-    for i in range(waterfall_width):
-        x = random.randint(waterfall_left, waterfall_right - 1)
-        y = random.randint(pool_top, height - 2)
-        speed = random.uniform(0.1, 0.3)
-        bubbles.append({"x": x, "y": y, "speed": speed, "char": random.choice(['o', 'O', '°', '*']), "color": 3})
     
-    # Create rocks for the waterfall to flow around
+    # Splash particles
+    splash_particles = []
+    
+    # Rocks at the base
     rocks = []
-    for i in range(waterfall_width // 5):
-        x = random.randint(waterfall_left + 1, waterfall_right - 2)
-        y = random.randint(waterfall_top + 5, pool_top - 5)
+    for i in range(waterfall_width // 8):
+        x = random.randint(waterfall_x, waterfall_x + waterfall_width - 1)
+        y = max_y - 2 - random.randint(0, 2)
         size = random.randint(1, 3)
-        rocks.append({"x": x, "y": y, "size": size})
+        rocks.append((x, y, size))
     
-    # Create sunlight rays
-    sunlight = []
-    for i in range(5):
-        x = random.randint(waterfall_left - 10, waterfall_right + 10)
-        y = random.randint(waterfall_top, waterfall_top + 5)
-        length = random.randint(3, 8)
-        sunlight.append({"x": x, "y": y, "length": length})
+    # Water pool at the bottom
+    pool_level = max_y - 4
     
-    # Create plants (decorative elements)
-    plants = []
-    for i in range(10):
-        x = random.randint(waterfall_left - 15, waterfall_right + 15)
-        if x < waterfall_left - 2 or x > waterfall_right + 2:  # Only place plants away from the main waterfall
-            y = random.randint(pool_top, height - 2)
-            plant_type = random.choice(['╿', '┤', '╽', '╾'])
-            plants.append({"x": x, "y": y, "type": plant_type})
+    # Animation frame counter
+    frame_count = 0
+    water_frame_idx = 0
     
-    # Draw banks and cliff
-    def draw_static_elements():
-        # Draw cliff top (where waterfall starts)
-        for x in range(waterfall_left - 2, waterfall_right + 2):
-            stdscr.addstr(waterfall_top - 1, x, "═", curses.A_BOLD)
-        
-        # Draw left bank
-        for y in range(waterfall_top, pool_top):
-            stdscr.addstr(y, waterfall_left - 2, "║", curses.A_BOLD)
-        
-        # Draw right bank
-        for y in range(waterfall_top, pool_top):
-            stdscr.addstr(y, waterfall_right + 1, "║", curses.A_BOLD)
-        
-        # Draw the pool borders
-        for x in range(waterfall_left - 15, waterfall_right + 15):
-            if x <= waterfall_left - 2 or x >= waterfall_right + 2:
-                stdscr.addstr(pool_top, x, "═", curses.A_BOLD)
-        
-        # Draw pool left and right extended sides
-        for y in range(pool_top + 1, height - 1):
-            stdscr.addstr(y, waterfall_left - 15, "║", curses.A_BOLD)
-            stdscr.addstr(y, waterfall_right + 14, "║", curses.A_BOLD)
-        
-        # Draw pool bottom
-        for x in range(waterfall_left - 15, waterfall_right + 15):
-            stdscr.addstr(height - 1, x, "═", curses.A_BOLD)
-        
-        # Add some decorative rocks
-        for rock in rocks:
-            if rock["size"] == 1:
-                try:
-                    stdscr.addstr(rock["y"], rock["x"], "◊", curses.A_BOLD)
-                except curses.error:
-                    pass
-            elif rock["size"] == 2:
-                try:
-                    stdscr.addstr(rock["y"], rock["x"], "◈", curses.A_BOLD)
-                except curses.error:
-                    pass
-            else:
-                try:
-                    stdscr.addstr(rock["y"] - 1, rock["x"], "╱╲", curses.A_BOLD)
-                    stdscr.addstr(rock["y"], rock["x"], "╲╱", curses.A_BOLD)
-                except curses.error:
-                    pass
-        
-        # Draw plants
-        for plant in plants:
-            try:
-                stdscr.addstr(plant["y"], plant["x"], plant["type"], 
-                             curses.color_pair(4) | curses.A_BOLD)
-            except curses.error:
-                pass
-        
-        # Draw sunlight rays
-        for ray in sunlight:
-            for i in range(ray["length"]):
-                try:
-                    stdscr.addstr(ray["y"] + i, ray["x"], "╲", 
-                                 curses.color_pair(5))
-                except curses.error:
-                    pass
-    
-    # Title
-    title = "Cascading Waterfall"
-    try:
-        stdscr.addstr(0, (width - len(title)) // 2, title, curses.A_BOLD)
-    except curses.error:
-        pass
-    
-    # Instruction
-    instruction = "Press 'q' to quit"
-    try:
-        stdscr.addstr(height - 1, 2, instruction)
-    except curses.error:
-        pass
-    
-    # Animation loop
-    frame = 0
-    running = True
-    while running:
-        # Check for key press
-        stdscr.nodelay(True)
-        key = stdscr.getch()
-        if key == ord('q') or key == ord('Q'):
-            running = False
-            break
-        
+    while True:
         stdscr.clear()
+        frame_count += 1
         
-        # Draw static elements
-        draw_static_elements()
+        # Draw sky
+        for y in range(pool_level - 15):
+            for x in range(max_x):
+                if random.random() < 0.001:
+                    stdscr.addch(y, x, '*', curses.color_pair(15))  # White stars
         
-        # Fill the pool with water
-        for y in range(pool_top + 1, height - 1):
-            for x in range(waterfall_left - 14, waterfall_right + 14):
-                if (x > waterfall_left - 15 and x < waterfall_right + 14):
-                    water_char = random.choice(['≈', '~', '≈', '~', ' '])
-                    color = 2 if random.random() > 0.7 else 1
-                    try:
-                        stdscr.addstr(y, x, water_char, curses.color_pair(color))
-                    except curses.error:
-                        pass
+        # Draw waterfall top (where water flows from)
+        water_top = water_frames[water_frame_idx]
+        water_frame_idx = (water_frame_idx + 1) % len(water_frames)
+        
+        for x in range(waterfall_width):
+            water_top_y = water_top[x]
+            stdscr.addch(water_top_y, waterfall_x + x, '~', curses.color_pair(39))  # Light blue
+            
+            # Add new water particles
+            if random.random() < 0.3:
+                water_particles.append([waterfall_x + x, water_top_y + 1, 0])
+        
+        # Draw main waterfall stream
+        for x in range(waterfall_width):
+            for y in range(water_top[x] + 1, pool_level):
+                intensity = 1.0 - (y - water_top[x]) / (pool_level - water_top[x])
+                char = '|'
+                if random.random() < 0.05:
+                    char = random.choice(['.', ':', '|'])
+                
+                # Different shades of blue based on intensity
+                color = 33 + int(intensity * 6)  # Range from darker to lighter blue
+                if y > pool_level - 3:
+                    color = 45  # Splash zone
+                
+                stdscr.addch(y, waterfall_x + x, char, curses.color_pair(color))
+                
+                # Add bubbles near the sides occasionally
+                if (x < 3 or x > waterfall_width - 4) and random.random() < 0.01:
+                    bubbles.append([waterfall_x + x, y, random.choice(['o', 'O', '°']), 0])
         
         # Update and draw water particles
-        for p in particles:
-            p["y"] += p["speed"]
+        new_particles = []
+        for particle in water_particles:
+            x, y, age = particle
+            y += random.choice([0, 1])
+            x += random.choice([-1, 0, 0, 0, 1])
+            age += 1
             
-            # If reached the pool, reset to top of waterfall
-            if p["y"] >= pool_top:
-                p["y"] = waterfall_top
-                p["x"] = random.randint(waterfall_left, waterfall_right - 1)
-            
-            # If particle hits a rock, make it flow around
-            for rock in rocks:
-                rock_range = 1 if rock["size"] == 1 else 2 if rock["size"] == 2 else 3
-                if (abs(p["x"] - rock["x"]) < rock_range and 
-                    abs(p["y"] - rock["y"]) < rock_range):
-                    # Flow around rock
-                    if p["x"] < rock["x"]:
-                        p["x"] -= 0.5
-                    else:
-                        p["x"] += 0.5
-            
-            # Keep particles within waterfall bounds
-            p["x"] = max(waterfall_left, min(waterfall_right - 1, p["x"]))
-            
-            # Draw the particle
-            water_chars = ['│', '╽', '╿', '║']
-            p["char"] = random.choice(water_chars)
-            try:
-                stdscr.addstr(int(p["y"]), int(p["x"]), p["char"], 
-                             curses.color_pair(p["color"]))
-            except curses.error:
-                pass
-        
-        # Update and draw bubbles/foam
-        for b in bubbles:
-            # Bubbles move upward and side to side slightly
-            b["y"] -= b["speed"]
-            if random.random() > 0.7:
-                b["x"] += random.choice([-0.2, 0.2])
-            
-            # If bubble reaches top of pool, create new bubble
-            if b["y"] < pool_top or b["y"] > height - 2:
-                b["y"] = random.randint(pool_top + 1, height - 2)
-                b["x"] = random.randint(waterfall_left, waterfall_right - 1)
-            
-            # Keep bubbles within bounds
-            b["x"] = max(waterfall_left - 14, min(waterfall_right + 13, b["x"]))
-            
-            # Draw the bubble
-            try:
-                stdscr.addstr(int(b["y"]), int(b["x"]), b["char"], 
-                             curses.color_pair(b["color"]))
-            except curses.error:
-                pass
-        
-        # Add splashing effect at the base of the waterfall
-        if frame % 2 == 0:
-            for i in range(10):
-                splash_x = random.randint(waterfall_left, waterfall_right - 1)
-                splash_chars = ["*", ".", "o", "'"]
+            if y < pool_level and 0 <= x < max_x and age < 20:
                 try:
-                    stdscr.addstr(pool_top, splash_x, random.choice(splash_chars), 
-                                 curses.color_pair(3) | curses.A_BOLD)
-                except curses.error:
+                    stdscr.addch(y, x, '.', curses.color_pair(45))
+                    new_particles.append([x, y, age])
+                except:
+                    pass  # Ignore if we're trying to write outside bounds
+            elif y >= pool_level - 1:
+                # Create foam when hitting the water
+                if random.random() < 0.3:
+                    foam_particles.append([x, pool_level - 1, 0])
+                # Create splash
+                if random.random() < 0.2:
+                    velocity_x = random.uniform(-1.5, 1.5)
+                    velocity_y = random.uniform(-2.0, -1.0)
+                    splash_particles.append([x, pool_level - 1, velocity_x, velocity_y, 0])
+        water_particles = new_particles
+        
+        # Update and draw foam particles
+        new_foam = []
+        for particle in foam_particles:
+            x, y, age = particle
+            age += 1
+            x += random.choice([-1, 0, 0, 0, 1])
+            
+            if age < 15 and 0 <= x < max_x:
+                try:
+                    char = random.choice(['~', '°', '·'])
+                    stdscr.addch(y, x, char, curses.color_pair(15))
+                    new_foam.append([x, y, age])
+                except:
+                    pass  # Ignore if we're trying to write outside bounds
+        foam_particles = new_foam
+        
+        # Update and draw bubbles
+        new_bubbles = []
+        for bubble in bubbles:
+            x, y, char, age = bubble
+            y -= random.choice([0, 0, 1])
+            x += random.choice([-1, 0, 0, 1])
+            age += 1
+            
+            if y > water_top[min(max(0, x - waterfall_x), waterfall_width - 1)] and age < 30:
+                try:
+                    stdscr.addch(y, x, char, curses.color_pair(15))
+                    new_bubbles.append([x, y, char, age])
+                except:
+                    pass  # Ignore if we're trying to write outside bounds
+        bubbles = new_bubbles
+        
+        # Update and draw splash particles
+        new_splash = []
+        for particle in splash_particles:
+            x, y, vx, vy, age = particle
+            x += vx
+            y += vy
+            vy += 0.2  # Gravity
+            age += 1
+            
+            if 0 <= int(x) < max_x and 0 <= int(y) < max_y and y < pool_level and age < 10:
+                try:
+                    stdscr.addch(int(y), int(x), '.', curses.color_pair(15))
+                    new_splash.append([x, y, vx, vy, age])
+                except:
+                    pass  # Ignore if we're trying to write outside bounds
+        splash_particles = new_splash
+        
+        # Draw rocks
+        for rock in rocks:
+            x, y, size = rock
+            for dy in range(size):
+                for dx in range(size * 2):
+                    try:
+                        if 0 <= y - dy < max_y and 0 <= x + dx - size < max_x:
+                            rock_char = '#' if dy == 0 else '/'
+                            stdscr.addch(y - dy, x + dx - size, rock_char, curses.color_pair(8))
+                    except:
+                        pass  # Ignore if we're trying to write outside bounds
+        
+        # Draw water pool
+        for y in range(pool_level, max_y):
+            for x in range(max_x):
+                char = '~'
+                if (x + y + frame_count) % 6 == 0:
+                    char = '≈'
+                elif (x + y + frame_count) % 6 == 3:
+                    char = '~'
+                
+                # Add ripples near waterfall center
+                center_dist = abs(x - (waterfall_x + waterfall_width // 2))
+                if center_dist < waterfall_width // 2:
+                    ripple_prob = 0.2 - (center_dist / (waterfall_width // 2)) * 0.2
+                    if random.random() < ripple_prob:
+                        char = '≈'
+                
+                try:
+                    stdscr.addch(y, x, char, curses.color_pair(32))
+                except:
+                    pass  # Ignore if we're trying to write outside bounds
+        
+        # Add random bubbles in pool
+        for _ in range(2):
+            if random.random() < 0.1:
+                x = random.randint(0, max_x - 1)
+                y = random.randint(pool_level, max_y - 1)
+                try:
+                    stdscr.addch(y, x, random.choice(['o', 'O', '°']), curses.color_pair(15))
+                except:
+                    pass  # Ignore if we're trying to write outside bounds
+        
+        # Draw waterfall banks
+        for y in range(0, pool_level):
+            # Left bank
+            bank_char = '/'
+            stdscr.addch(y, waterfall_x - 1, bank_char, curses.color_pair(2))
+            # Right bank
+            bank_char = '\\'
+            stdscr.addch(y, waterfall_x + waterfall_width, bank_char, curses.color_pair(2))
+        
+        # Draw title
+        title = "WATERFALL"
+        if max_x >= len(title) + 4:
+            for i, char in enumerate(title):
+                try:
+                    stdscr.addch(1, (max_x - len(title)) // 2 + i, char, curses.A_BOLD | curses.color_pair(14))
+                except:
                     pass
         
-        # Update frame counter
-        frame += 1
+        # Instructions
+        instructions = "Press 'q' to exit"
+        if max_x >= len(instructions) + 4:
+            for i, char in enumerate(instructions):
+                try:
+                    stdscr.addch(max_y - 1, (max_x - len(instructions)) // 2 + i, char, curses.color_pair(15))
+                except:
+                    pass
         
-        # Render the screen
         stdscr.refresh()
         
-        # Control animation speed
-        time.sleep(0.05)
+        # Handle input
+        stdscr.timeout(50)  # 50ms delay for animation speed
+        key = stdscr.getch()
+        if key == ord('q'):
+            break
+        elif key == curses.KEY_RESIZE:
+            max_y, max_x = stdscr.getmaxyx()
+            waterfall_width = min(max_x - 4, waterfall_width)
+            pool_level = max_y - 4
+            # Reinitialize water frames for new width
+            water_frames = []
+            for i in range(6):
+                frame = []
+                for x in range(waterfall_width):
+                    frame.append(max_y // 2 + int(math.sin(x / 5 + i / 2) * 2))
+                water_frames.append(frame)
 
 if __name__ == "__main__":
     try:
-        wrapper(main)
+        # Initialize curses
+        curses.wrapper(main)
     except KeyboardInterrupt:
-        print("Exiting waterfall animation...")
+        pass
+    finally:
+        print("Thank you for watching the waterfall!")
