@@ -151,52 +151,65 @@ def get_color_for_season(element_type, season):
     
     return Colors.GREEN
 
+def safe_addstr(stdscr, y, x, char, attr=0):
+    """Safely add a string to the screen, checking boundaries"""
+    height, width = stdscr.getmaxyx()
+    # Check if the position is within bounds (leave the last column alone)
+    if 0 <= y < height and 0 <= x < width - 1:
+        try:
+            stdscr.addstr(y, x, char, attr)
+        except curses.error:
+            pass  # Ignore errors
+
 def draw_tree(stdscr, tree):
     """Draw the tree on the screen"""
     season_names = ["Spring", "Summer", "Fall", "Winter"]
     
     # Draw season
-    stdscr.addstr(0, 0, f"Season: {season_names[tree.season]}", curses.color_pair(get_color_for_season("leaf", tree.season)))
+    safe_addstr(stdscr, 0, 0, f"Season: {season_names[tree.season]}", 
+                curses.color_pair(get_color_for_season("leaf", tree.season)))
     
     # Draw trunk
     for y, x, char in tree.trunk:
-        stdscr.addstr(y, x, char, curses.color_pair(Colors.BROWN))
+        safe_addstr(stdscr, y, x, char, curses.color_pair(Colors.BROWN))
     
     # Draw branches
     for y, x, char in tree.branches:
-        stdscr.addstr(y, x, char, curses.color_pair(Colors.BROWN))
+        safe_addstr(stdscr, y, x, char, curses.color_pair(Colors.BROWN))
     
     # Draw leaves
     for y, x, char in tree.leaves:
-        stdscr.addstr(y, x, char, curses.color_pair(get_color_for_season("leaf", tree.season)))
+        safe_addstr(stdscr, y, x, char, curses.color_pair(get_color_for_season("leaf", tree.season)))
     
     # Draw fruits
     for y, x, char in tree.fruits:
-        stdscr.addstr(y, x, char, curses.color_pair(get_color_for_season("fruit", tree.season)))
+        safe_addstr(stdscr, y, x, char, curses.color_pair(get_color_for_season("fruit", tree.season)))
 
 def draw_ground(stdscr, width, height):
     """Draw ground at the bottom of the screen"""
-    ground_y = height - 1
-    for x in range(width):
-        stdscr.addstr(ground_y, x, "_", curses.color_pair(Colors.BROWN))
+    ground_y = height - 2  # Move up one to avoid the bottom right corner
+    for x in range(width - 1):  # Leave the last column alone
+        safe_addstr(stdscr, ground_y, x, "_", curses.color_pair(Colors.BROWN))
 
 def draw_info(stdscr, height, width):
     """Draw information text at the bottom"""
     info_text = "Press 'q' to quit | 's' to change season | 'g' to grow faster"
-    if height > 3 and width > len(info_text):
-        stdscr.addstr(height - 2, 0, info_text)
+    if height > 3:
+        for i, char in enumerate(info_text):
+            if i < width - 1:  # Ensure we don't write to the last column
+                safe_addstr(stdscr, height - 3, i, char)
 
 def handle_resize(stdscr, tree):
     """Handle terminal resize"""
     height, width = stdscr.getmaxyx()
-    tree.max_height = height - 3  # Leave room for info
-    tree.max_width = width
+    tree.max_height = height - 4  # Leave more room for info and ground
+    tree.max_width = width - 1  # Stay away from the right edge
     
     # Adjust tree if terminal gets smaller
-    tree.trunk = [(y, x, c) for y, x, c in tree.trunk if y < height and x < width]
-    tree.branches = [(y, x, c) for y, x, c in tree.branches if y < height and x < width]
-    tree.leaves = [(y, x, c) for y, x, c in tree.leaves if y < height and x < width]
-    tree.fruits = [(y, x, c) for y, x, c in tree.fruits if y < height and x < width]
+    tree.trunk = [(y, x, c) for y, x, c in tree.trunk if y < height - 4 and x < width - 1]
+    tree.branches = [(y, x, c) for y, x, c in tree.branches if y < height - 4 and x < width - 1]
+    tree.leaves = [(y, x, c) for y, x, c in tree.leaves if y < height - 4 and x < width - 1]
+    tree.fruits = [(y, x, c) for y, x, c in tree.fruits if y < height - 4 and x < width - 1]
 
 def main(stdscr):
     # Setup
@@ -208,7 +221,7 @@ def main(stdscr):
     
     # Get terminal size
     height, width = stdscr.getmaxyx()
-    tree = Tree(height - 3, width)  # Leave room for info
+    tree = Tree(height - 4, width - 1)  # Leave room for info and stay away from edges
     
     # Handle signals
     def handle_sigint(sig, frame):
@@ -227,7 +240,11 @@ def main(stdscr):
             stdscr.clear()
         
         # Handle input
-        key = stdscr.getch()
+        try:
+            key = stdscr.getch()
+        except curses.error:
+            key = -1  # No input available
+            
         if key == ord('q'):
             break
         elif key == ord('s'):
@@ -237,7 +254,10 @@ def main(stdscr):
             for _ in range(5):
                 tree.grow()
         
-        stdscr.clear()
+        try:
+            stdscr.clear()
+        except curses.error:
+            pass  # Ignore clear errors
         
         # Grow the tree
         tree.grow()
@@ -247,7 +267,11 @@ def main(stdscr):
         draw_tree(stdscr, tree)
         draw_info(stdscr, height, width)
         
-        stdscr.refresh()
+        try:
+            stdscr.refresh()
+        except curses.error:
+            pass  # Ignore refresh errors
+            
         time.sleep(0.1)
 
 if __name__ == "__main__":
@@ -256,3 +280,7 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         print("Exiting GitTree...")
         sys.exit(0)
+    except Exception as e:
+        curses.endwin()
+        print(f"Error: {e}")
+        sys.exit(1)
