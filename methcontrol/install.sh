@@ -4,7 +4,7 @@
 mkdir -p /usr/local/share/meth-packages/methcontrol
 
 # Copy Python script to package directory
-cp nox.py /usr/local/share/meth-packages/methcontrol/
+cp methcontrol.py /usr/local/share/meth-packages/methcontrol/
 
 # Make it executable
 chmod +x /usr/local/share/meth-packages/methcontrol/methcontrol.py
