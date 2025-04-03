@@ -89,7 +89,7 @@ class FileExplorer:
     
     def draw(self):
         self.stdscr.clear()
-        h, w = self.stdscr.getmaxlines(), self.stdscr.getmaxyx()[1]
+        h, w = self.stdscr.getmaxyx()  # Fixed: use getmaxyx() which returns a tuple (height, width)
         
         # Draw title bar
         title = f" File Explorer - {self.package_manager['name'].upper()} Package Manager "
@@ -102,7 +102,7 @@ class FileExplorer:
         self.stdscr.addstr(1, 0, path_display, curses.A_BOLD)
         
         # Draw separator
-        self.stdscr.addstr(2, 0, "─" * w)
+        self.stdscr.addstr(2, 0, "─" * (w-1))  # Avoid writing to bottom-right corner
         
         # Draw items
         for i in range(min(self.max_items, len(self.items))):
@@ -154,7 +154,7 @@ class FileExplorer:
                 self.stdscr.addstr(i+3, 0, f" {display_name}", attr)
                 
         # Draw status bar
-        self.stdscr.addstr(h-3, 0, "─" * w)
+        self.stdscr.addstr(h-3, 0, "─" * (w-1))  # Avoid writing to bottom-right corner
         
         # Draw search box if in search mode
         if self.search_mode:
@@ -284,8 +284,8 @@ class FileExplorer:
                     self.show_error("No text editor found")
     
     def show_error(self, message):
-        h, w = self.stdscr.getmaxlines(), self.stdscr.getmaxyx()[1]
-        self.stdscr.addstr(h-4, 0, " " * w)
+        h, w = self.stdscr.getmaxyx()  # Fixed: use getmaxyx() correctly
+        self.stdscr.addstr(h-4, 0, " " * (w-1))  # Avoid writing to bottom-right corner
         self.stdscr.addstr(h-4, 0, message, curses.color_pair(4) | curses.A_BOLD)
         self.stdscr.refresh()
         self.stdscr.getch()  # Wait for key press
@@ -332,7 +332,7 @@ class FileExplorer:
     def create_directory(self):
         curses.echo()
         curses.curs_set(1)
-        h = self.stdscr.getmaxlines()
+        h, w = self.stdscr.getmaxyx()  # Fixed: use getmaxyx() correctly
         self.stdscr.addstr(h-4, 0, "Enter directory name: ")
         self.stdscr.clrtoeol()
         
@@ -354,7 +354,7 @@ class FileExplorer:
         selected = self.items[self.cursor_pos]
         full_path = os.path.join(self.current_path, selected)
         
-        h = self.stdscr.getmaxlines()
+        h, w = self.stdscr.getmaxyx()  # Fixed: use getmaxyx() correctly
         self.stdscr.addstr(h-4, 0, f"Delete {selected}? (y/n): ")
         self.stdscr.clrtoeol()
         
@@ -378,7 +378,7 @@ class FileExplorer:
         
         curses.echo()
         curses.curs_set(1)
-        h = self.stdscr.getmaxlines()
+        h, w = self.stdscr.getmaxyx()  # Fixed: use getmaxyx() correctly
         self.stdscr.addstr(h-4, 0, f"Rename {selected} to: ")
         self.stdscr.clrtoeol()
         
@@ -402,7 +402,7 @@ class FileExplorer:
         self.clipboard = os.path.join(self.current_path, selected)
         self.clipboard_op = 'copy'
         
-        h = self.stdscr.getmaxlines()
+        h, w = self.stdscr.getmaxyx()  # Fixed: use getmaxyx() correctly
         self.stdscr.addstr(h-4, 0, f"Copied {selected} to clipboard")
         self.stdscr.clrtoeol()
         self.stdscr.refresh()
@@ -415,7 +415,7 @@ class FileExplorer:
         self.clipboard = os.path.join(self.current_path, selected)
         self.clipboard_op = 'cut'
         
-        h = self.stdscr.getmaxlines()
+        h, w = self.stdscr.getmaxyx()  # Fixed: use getmaxyx() correctly
         self.stdscr.addstr(h-4, 0, f"Cut {selected} to clipboard")
         self.stdscr.clrtoeol()
         self.stdscr.refresh()
@@ -430,7 +430,7 @@ class FileExplorer:
         
         # Check if destination already exists
         if os.path.exists(destination):
-            h = self.stdscr.getmaxlines()
+            h, w = self.stdscr.getmaxyx()  # Fixed: use getmaxyx() correctly
             self.stdscr.addstr(h-4, 0, f"{basename} already exists. Overwrite? (y/n): ")
             self.stdscr.clrtoeol()
             
@@ -455,7 +455,7 @@ class FileExplorer:
     def search_files(self):
         self.search_mode = True
         self.search_string = ""
-        h = self.stdscr.getmaxlines()
+        h, w = self.stdscr.getmaxyx()  # Fixed: use getmaxyx() correctly
         
         curses.echo()
         curses.curs_set(1)
@@ -496,7 +496,7 @@ class FileExplorer:
     def package_install(self):
         curses.echo()
         curses.curs_set(1)
-        h = self.stdscr.getmaxlines()
+        h, w = self.stdscr.getmaxyx()  # Fixed: use getmaxyx() correctly
         self.stdscr.addstr(h-4, 0, "Enter package name to install: ")
         self.stdscr.clrtoeol()
         
@@ -516,7 +516,7 @@ class FileExplorer:
     def package_remove(self):
         curses.echo()
         curses.curs_set(1)
-        h = self.stdscr.getmaxlines()
+        h, w = self.stdscr.getmaxyx()  # Fixed: use getmaxyx() correctly
         self.stdscr.addstr(h-4, 0, "Enter package name to remove: ")
         self.stdscr.clrtoeol()
         
