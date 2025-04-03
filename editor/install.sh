@@ -4,12 +4,12 @@
 mkdir -p /usr/local/share/meth-packages/editor
 
 # Copy Python script to package directory
-cp simpleedit.py /usr/local/share/meth-packages/editor/
+cp editor.py /usr/local/share/meth-packages/editor/
 
 # Make it executable
-chmod +x /usr/local/share/meth-packages/editor/simpleedit.py
+chmod +x /usr/local/share/meth-packages/editor/editor.py
 
 # Create symlink in PATH
-ln -sf /usr/local/share/meth-packages/editor/simpledit.py /usr/local/bin/editor
+ln -sf /usr/local/share/meth-packages/editor/editor.py /usr/local/bin/editor
 
 echo "Package Simple Edit installed successfully"
