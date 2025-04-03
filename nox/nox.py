@@ -41,7 +41,7 @@ class FileExplorer:
         package_managers = [
             ("apt", "apt list --installed", "apt show", "apt install", "apt remove"),
             ("dnf", "dnf list installed", "dnf info", "dnf install", "dnf remove"),
-            ("pacman", "pacman -Q", "pacman -Qi", "pacman -S", "pacman -R"),
+            ("meth", "pacman -Q", "pacman -Qi", "pacman -S", "pacman -R"),
             ("zypper", "zypper search --installed-only", "zypper info", "zypper install", "zypper remove"),
             ("emerge", "emerge -ep world", "emerge -pv", "emerge", "emerge --unmerge")
         ]
@@ -58,7 +58,7 @@ class FileExplorer:
         
         # Default to apt if nothing is found
         return {
-            "name": "apt",
+            "name": "meth",
             "list_cmd": "apt list --installed",
             "info_cmd": "apt show",
             "install_cmd": "apt install",
