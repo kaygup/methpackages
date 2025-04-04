@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 import os
 import platform
 import socket
@@ -7,13 +5,13 @@ import getpass
 import subprocess
 import re
 
-# ANSI color codes for trans flag colors
+
 BLUE = "\033[38;2;91;206;250m"
 PINK = "\033[38;2;245;169;184m"
 WHITE = "\033[38;2;255;255;255m"
 RESET = "\033[0m"
 
-# ASCII art with trans flag colors (alternating lines with BLUE, PINK, WHITE, PINK, BLUE)
+
 def get_ascii_art():
     ascii_art = [
         f"{BLUE}⠀⠀⠀⠀⠀⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀⠀⣄⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀⠀{RESET}",
@@ -71,7 +69,6 @@ def get_system_info():
     except:
         memory_info = "Unknown Memory"
 
-    # Detect desktop environment
     desktop_env = os.environ.get('XDG_CURRENT_DESKTOP', 'Unknown')
     
     info = [
