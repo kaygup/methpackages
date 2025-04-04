@@ -50,20 +50,19 @@ class Flask:
                     })
                     
         elif self.platform == "darwin":
-            # Get list of disk devices on macOS
+            
             diskutil_output = subprocess.check_output(
                 ["diskutil", "list", "-plist", "external", "physical"],
                 text=True
             )
             
-            # Extract disk identifiers
             import plistlib
             try:
                 plist = plistlib.loads(diskutil_output.encode())
                 for disk in plist.get("AllDisksAndPartitions", []):
                     disk_id = disk.get("DeviceIdentifier")
                     
-                    # Get detailed info about the disk
+
                     disk_info = subprocess.check_output(
                         ["diskutil", "info", "-plist", f"/dev/{disk_id}"],
                         text=True
@@ -106,7 +105,7 @@ class Flask:
         """Unmount a device before flashing."""
         try:
             if self.platform == "linux":
-                # Check if device is mounted
+                
                 mounted = subprocess.run(
                     ["findmnt", device], 
                     capture_output=True
